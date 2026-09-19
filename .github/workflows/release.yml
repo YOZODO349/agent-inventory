@@ -1,0 +1,35 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ["v*"]          # 推 v1.2.3 这样的 tag 就自动构建并发布
+  workflow_dispatch:      # 也可以在 Actions 页面手动点一下
+
+permissions:
+  contents: write         # 发布 Release 需要写权限
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build single-file exe
+        run: uv run pyinstaller --noconfirm scripts/build_exe.spec
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentAssetOverview-windows
+          path: dist/AgentAssetOverview.exe
+          if-no-files-found: error
+
+      - name: Attach exe to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/AgentAssetOverview.exe
+          generate_release_notes: true

@@ -1,0 +1,32 @@
+# ---- 虚拟环境 ----
+.venv/
+venv/
+
+# ---- 运行期产物：采自你自己电脑的名册 ----
+# 里面有你的用户名路径、你装的技能与插件清单，别提交
+src/agents.json
+src/agent_inventory.json
+
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# ---- 打包产物 ----
+build/
+dist/
+*.exe
+*.spec.bak
+
+# ---- 日志与自检 ----
+*.log
+_boot.log
+启动失败.log
+自检结果.txt
+
+# ---- 各软件图标的提取物（版权归各家，不入库；缺了程序会自动改用取色）----
+src/agent_icons/
+
+# ---- 便携数据与备份 ----
+src/便携数据/
+备份/
