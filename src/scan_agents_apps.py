@@ -16,6 +16,8 @@
 import os
 import re
 import sys
+import glob
+import io
 import json
 
 HOME = os.path.expanduser("~")
@@ -671,6 +673,14 @@ LOG_SOURCES = {
         {"name": "WorkBuddy 会话记忆",
          "glob": os.path.join(HOME, "WorkBuddy", "*", ".workbuddy", "memory", "*.md"),
          "mode": "copy"},
+        # 第三十六轮（爱卿问：最新的那条记录怎么没抄到）——
+        # WorkBuddy 还有一份**用户级长期记忆**：~/.workbuddy/memory/<会话>_memory.md，
+        # 而且**正在进行的会话就往这里写**。先前的 glob 只扫各会话工作区里的
+        # memory 子目录，于是"当前这次会话"的记录永远抄不到 —— 症状就是
+        # 点了「手动抄录」却报"暂无新日志"。
+        {"name": "WorkBuddy 长期记忆",
+         "glob": os.path.join(HOME, ".workbuddy", "memory", "*.md"),
+         "mode": "copy"},
     ],
     "codexplus": [
         {"name": "Codex 笔记",
@@ -710,6 +720,7 @@ AGENT_ALIASES = {
     "workbuddy": "WorkBuddy", "cursor": "Cursor", "codex++": "Codex++",
     "codexplus": "Codex++", "codex": "Codex++", "astrbot": "AstrBot",
     "小软": "AstrBot", "grok bot": "Grok Bot", "grok": "Grok Bot",
+    "desktop": "桌面记录", "桌面": "桌面记录",
     "comfyui": "ComfyUI",
 }
 
@@ -762,6 +773,450 @@ def _task_artifacts(text, extra_paths=None):
         if p not in out:
             out.append(p)
     return out
+
+
+# ---------- 记录根登记表（第三十七轮：就地索引取代抄录） ----------
+# 爱卿之见：既然各家 Agent 的记录本来就长在各自的目录里，何必再抄一份？
+# 故改成「指名各家的记录根，搜索 / 工作台 / MCP **就地读**」：
+#   · 新写的内容立刻可查（不必等一轮抄录）
+#   · 再不会出现「源漏写一处 ⇒ 那类记录永远抄不到」（本宫栽过两次）
+#   · 不再存第二份，去掉重复
+# 三档处理：
+#   direct —— 直接读（绝大多数）
+#   digest —— 太大/不是给人读的（如 Codex 的 jsonl 实录，单文件十几 MB），
+#             摘录成可读文本，存**缓存**目录（可随时重建，不是唯一副本）
+#   skip   —— 私有/二进制格式（Cursor 的 sqlite 之类），只登记位置
+RECORD_ROOTS = {
+    "workbuddy": [
+        {"name": "WorkBuddy 会话记忆",
+         "root": os.path.join(HOME, "WorkBuddy", "*", ".workbuddy", "memory"),
+         "mode": "direct"},
+        {"name": "WorkBuddy 长期记忆",
+         "root": os.path.join(HOME, ".workbuddy", "memory"),
+         "mode": "direct"},
+        # 第四十三轮（爱卿指路）：WorkBuddy 的**完整会话存档**在
+        #   ~/.workbuddy/projects/<项目>/<会话>.jsonl —— 一个会话一个文件，
+        #   单个可达 12 MB（不是给人读的），故走摘录一档；
+        #   同目录下的 .txt 是可读的，走直读。
+        {"name": "WorkBuddy 会话存档",
+         "root": os.path.join(HOME, ".workbuddy", "projects"), "mode": "digest",
+         "glob": os.path.join(HOME, ".workbuddy", "projects", "*", "*.jsonl")},
+        {"name": "WorkBuddy 项目文本",
+         "root": os.path.join(HOME, ".workbuddy", "projects"), "mode": "direct"},
+    ],
+    "codexplus": [
+        {"name": "Codex 笔记", "root": os.path.join(HOME, ".codex", "memories"),
+         "mode": "direct"},
+        {"name": "Codex 会话实录",
+         "root": os.path.join(HOME, ".codex", "sessions"), "mode": "digest",
+         "glob": os.path.join(HOME, ".codex", "sessions", "*", "*", "*", "*.jsonl")},
+    ],
+    "astrbot": [
+        {"name": "AstrBot 会话工作区",
+         "root": os.path.join(HOME, ".astrbot", "data", "workspaces"),
+         "mode": "direct"},
+        # 第四十二轮（爱卿令：WorkBuddy 找不到"叫你写题"那件事）——
+        #   AstrBot 的**对话内容**不在文件里，在 data_v4.db 的 conversations 表里
+        #   （16 行、56 MB 的 JSON）。先前只登记了 workspaces（干活的产物），
+        #   于是"聊过什么"这一层完全检索不到。此处补上，走**摘录**一档：
+        #   剥出纯文本、按条截断，落进缓存目录供检索。
+        {"name": "AstrBot 对话记忆", "mode": "digest_sqlite",
+         "root": os.path.join(HOME, ".astrbot", "data", "data_v4.db"),
+         "db": os.path.join(HOME, ".astrbot", "data", "data_v4.db"),
+         "table": "conversations", "key_col": "conversation_id",
+         "time_col": "updated_at", "content_col": "content"},
+    ],
+    "cursor": [
+        {"name": "Cursor 会话存储",
+         "root": os.path.join(os.environ.get("APPDATA", ""), "Cursor", "User",
+                              "workspaceStorage"),
+         "mode": "skip"},
+    ],
+    "grokbot": [
+        {"name": "Grok Bot 数据",
+         "root": os.path.join(os.environ.get("APPDATA", ""), "Grok Bot"),
+         "mode": "skip"},
+    ],
+    # 桌面：爱卿习惯把记录直接放桌面 —— 直读（只收 .md/.txt，不复制、不搬走）
+    "desktop": [
+        {"name": "桌面文本记录", "root": os.path.join(HOME, "Desktop"),
+         "mode": "direct", "ext": (".md", ".txt"), "depth": 2},
+    ],
+}
+
+EXTRA_ROOTS_NAME = "检索地址.json"
+
+
+def extra_roots_file():
+    """用户手工登记的检索地址（不在程序旁，免得被当成数据到处同步）。"""
+    return os.path.join(os.environ.get("LOCALAPPDATA", HOME), "Agent资产总览",
+                        EXTRA_ROOTS_NAME)
+
+
+def load_extra_roots():
+    """读用户登记的检索地址。
+
+    第四十四轮（爱卿之策）：让 Agent **自报家门**（问它"你的记忆存在哪"），
+    把它报出来的路径粘进应用对应 Agent 的【检索地址】里，那一处就纳入了
+    主动检索 —— 比本宫去猜各家目录结构靠谱得多。
+    形如：{"workbuddy": [{"path": "C:\\…", "mode": "direct"|"digest", "name": "…"}]}
+    """
+    try:
+        d = json.load(io.open(extra_roots_file(), encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_extra_roots(d):
+    fp = extra_roots_file()
+    try:
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        io.open(fp, "w", encoding="utf-8").write(json.dumps(d, ensure_ascii=False,
+                                                            indent=1))
+        return True
+    except Exception:
+        return False
+
+
+_ROOTS_CACHE = {"t": 0, "v": None}
+
+
+def _roots_for(key):
+    """取某 Agent 的（内置 + 手工登记）记录根；缓存 5 秒，免得每文件都读盘。"""
+    import time as _t
+    now = _t.time()
+    if not _ROOTS_CACHE["v"] or now - _ROOTS_CACHE["t"] > 5:
+        _ROOTS_CACHE["v"] = all_roots()
+        _ROOTS_CACHE["t"] = now
+    return _ROOTS_CACHE["v"].get(key) or []
+
+
+def invalidate_roots():
+    _ROOTS_CACHE["t"] = 0
+    _ROOTS_CACHE["v"] = None
+
+
+def all_roots():
+    """内置登记表 + 用户手工登记的（**据此检索与摘录**）。"""
+    out = {k: [dict(r) for r in v] for k, v in RECORD_ROOTS.items()}
+    for key, items in (load_extra_roots() or {}).items():
+        for it in (items or []):
+            p2 = str((it or {}).get("path") or "").strip()
+            if not p2:
+                continue
+            nm = (it or {}).get("name") or (u"手工登记 · " + os.path.basename(
+                p2.rstrip("\\/")) or u"手工登记")
+            out.setdefault(key, []).append({
+                "name": nm, "root": p2,
+                "mode": (it or {}).get("mode") or "direct", "user": True})
+    return out
+
+
+def probe_path(p2):
+    """探一个路径：有多少文件、多大、什么格式 —— 好判断该直读还是摘录。"""
+    if not p2 or not os.path.exists(p2):
+        return {"exists": False}
+    files, tot, exts, dirs = 0, 0, {}, 0
+    if os.path.isfile(p2):
+        files, tot = 1, os.path.getsize(p2)
+        exts[os.path.splitext(p2)[1].lower() or u"（无）"] = 1
+    else:
+        for dp, dns, fns in os.walk(p2):
+            dns[:] = [d for d in dns if d not in ROOT_SKIP_DIRS]
+            dirs += 1
+            for f in fns:
+                fp = os.path.join(dp, f)
+                try:
+                    sz = os.path.getsize(fp)
+                except Exception:
+                    continue
+                files += 1
+                tot += sz
+                e = os.path.splitext(f)[1].lower() or u"（无）"
+                exts[e] = exts.get(e, 0) + 1
+            if files > 4000:
+                break
+    top = sorted(exts.items(), key=lambda x: -x[1])[:5]
+    big = [e for e, _ in top if e in (".jsonl", ".ndjson", ".db", ".sqlite", ".sqlite3",
+                                      ".dat", ".bin", ".log", ".json")]
+    text_like = [e for e, _ in top if e in (".md", ".txt", ".markdown")]
+    mode = "digest" if (tot > 2 * 1024 * 1024 or (big and not text_like)) else "direct"
+    return {"exists": True, "files": files, "bytes": tot, "exts": top,
+            "suggest": mode, "dirs": dirs}
+
+
+ROOT_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
+                  "site-packages", "binaries", "cache", "blobs", "artifact-index",
+                  "logs", "temp", "attachments", "tamper", "appearance-resources",
+                  ".workbuddy-sqlite-migrations", "t2i_templates", "dist", "build"}
+ROOT_MAX_BYTES = 1024 * 1024          # 单文件上限 1 MB（再大就不是记录，是数据）
+ROOT_EXTS = (".md", ".txt")           # 记录一般就这两种；.py/.log/.json 是干活的碎屑
+
+
+def digest_cache_dir():
+    """摘录缓存目录（可随时重建，故不算「唯一副本」）。"""
+    d = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                     "Agent资产总览", "digest缓存")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+
+def _expand_roots(root):
+    """记录根可能带通配（如 ~/WorkBuddy/*/.workbuddy/memory），展开成真实目录。"""
+    if any(c in root for c in "*?["):
+        try:
+            return [x for x in glob.glob(root) if os.path.isdir(x)]
+        except Exception:
+            return []
+    return [root] if os.path.isdir(root) else []
+
+
+def _walk_root(root, exts=ROOT_EXTS, depth=4, cap=ROOT_MAX_BYTES):
+    """遍历一个记录根里的可读记录文件。"""
+    out = []
+    for base in _expand_roots(root):
+        for dp, dns, fns in os.walk(base):
+            if dp[len(base):].count(os.sep) >= depth:
+                dns[:] = []
+            dns[:] = [d for d in dns if d not in ROOT_SKIP_DIRS]
+            for f in fns:
+                if exts and os.path.splitext(f)[1].lower() not in exts:
+                    continue
+                fp = os.path.join(dp, f)
+                try:
+                    st2 = os.stat(fp)
+                except Exception:
+                    continue
+                if st2.st_size == 0 or st2.st_size > cap:
+                    continue
+                out.append(fp)
+    return out
+
+
+def agent_key_of(agent):
+    """取 Agent 的登记键（用来对上记录根）。"""
+    return (agent.get("key") or "").strip().lower()
+
+
+def iter_record_files(agents, include_digest_cache=True):
+    """就地索引的**统一入口**：产出 (agent_name, 文件路径, 来源名)。
+
+    搜索、工作台、MCP 全走它 —— 不再依赖任何抄录副本。
+    """
+    covered = set()
+    for a in (agents or []):
+        if (a.get("kind") or "agent") != "agent":
+            continue
+        key = agent_key_of(a)
+        covered.add(key)
+        for r in _roots_for(key):
+            if r.get("mode") not in ("direct", "digest"):
+                continue
+            for fp in _walk_root(r["root"], r.get("ext") or ROOT_EXTS,
+                                 r.get("depth", 4)):
+                yield a.get("name") or key, fp, r["name"]
+        # 各 Agent **主动整理的工作记录**（`工作记录\<Agent>\`）也是记录，同样就地读。
+        #    这一格是人（或 Agent 按「更新数据」提示词）写的整理稿 —— 内容最有价值，
+        #    第三十七轮改就地索引时曾漏掉它，此处补回。
+        wd = a.get("works_dir") or ""
+        if wd and os.path.isdir(wd):
+            for fp in _walk_root(wd, ROOT_EXTS, 2):
+                yield a.get("name") or key, fp, "工作记录"
+        # 这个 Agent 的摘录缓存也算它的记录
+        if include_digest_cache:
+            for fp in glob.glob(os.path.join(digest_cache_dir(), "*.md")):
+                bn = os.path.basename(fp)
+                for r in _roots_for(key):
+                    if r.get("mode") in ("digest", "digest_sqlite") and \
+                            bn.startswith(r["name"] + "_"):
+                        yield a.get("name") or key, fp, r["name"] + "（摘录）"
+    # 没有对应客户端的记录根也要读（如桌面 —— 爱卿习惯把记录直接放桌面）
+    for key, roots in all_roots().items():
+        if key in covered:
+            continue
+        for r in roots:
+            if r.get("mode") not in ("direct", "digest"):
+                continue
+            for fp in _walk_root(r["root"], r.get("ext") or ROOT_EXTS,
+                                 r.get("depth", 4)):
+                yield AGENT_ALIASES.get(key, key), fp, r["name"]
+
+
+def record_roots_of(agent):
+    """某个 Agent 的记录根清单（给界面显示用）：[(来源名, 路径, 处理方式, 文件数)]。"""
+    out = []
+    key = agent_key_of(agent)
+    for r in _roots_for(key):
+        roots = _expand_roots(r["root"])
+        mode = r.get("mode")
+        if mode in ("direct", "digest", "digest_sqlite"):
+            n = (len(glob.glob(os.path.join(digest_cache_dir(), r["name"] + "_*.md")))
+                 if mode == "digest_sqlite"
+                 else len(_walk_root(r["root"], r.get("ext") or ROOT_EXTS,
+                                     r.get("depth", 4))))
+        else:
+            n = len(roots)
+        out.append({"name": r["name"], "root": r["root"], "mode": mode,
+                    "found": bool(roots), "count": n})
+    return out
+
+
+def _pick_text(obj, cap=2000):
+    """从 AstrBot 的消息结构里挖出纯文本（它把消息存成嵌套 JSON）。
+
+    `[{"role":"user","content":[{"type":"text","text":"…"}]}, …]` 这种形状，
+    图片/工具结果里也可能带超长 text，故逐段截断。
+    """
+    out = []
+
+    def walk(x, depth=0):
+        if depth > 8 or isinstance(x, str):
+            return
+        if isinstance(x, dict):
+            t = x.get("text")
+            if isinstance(t, str) and t.strip():
+                out.append(t.strip()[:cap])
+            for k, v in x.items():
+                if k != "text":
+                    walk(v, depth + 1)
+        elif isinstance(x, list):
+            for i in x[:400]:
+                walk(i, depth + 1)
+
+    walk(obj)
+    return "\n".join(out)
+
+
+def _digest_sqlite(src, st, key, lim_bytes=160 * 1024):
+    """把 SQLite 里的会话摘成可读 .md，落进缓存目录。返回 (新摘几篇, 源名)。"""
+    import sqlite3
+    import time as _t
+    db = src.get("db")
+    if not db or not os.path.isfile(db):
+        return 0, src["name"]
+    dest = digest_cache_dir()
+    seen_map = (st.setdefault(key, {})).setdefault(src["name"], {})
+    made = 0
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % db.replace("\\", "/"), uri=True,
+                              timeout=20)
+        cur = con.cursor()
+        rows = list(cur.execute(
+            "SELECT rowid, %s, %s, LENGTH(%s) FROM %s ORDER BY %s DESC LIMIT 200"
+            % (src["key_col"], src["content_col"], src["content_col"],
+               src["table"], src.get("time_col") or "rowid")))
+        tcol = list(cur.execute("PRAGMA table_info(%s)" % src["table"]))
+        tnames = [c[1] for c in tcol]
+        con.close()
+    except Exception as e:
+        return 0, src["name"] + "（读库失败：%s）" % str(e)[:40]
+    for rid, cid, content, clen in rows:
+        tag = "%s:%s" % (db, cid)
+        if seen_map.get(tag) == [int(clen or 0)]:
+            continue                     # 没变过，跳过
+        try:
+            import json as _json
+            msgs = _json.loads(content) if isinstance(content, str) else content
+        except Exception:
+            msgs = [{"role": "?", "content": [{"type": "text", "text": str(content)}]}]
+        if not isinstance(msgs, list):
+            msgs = [msgs]
+        body, total = [], 0
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            role = {"user": u"用户", "assistant": u"助手",
+                    "system": u"系统"}.get(str(m.get("role")), str(m.get("role")))
+            txt = _pick_text(m.get("content") if "content" in m else m)
+            if not txt:
+                continue
+            body.append(u"### %s\n%s" % (role, txt))
+            total += len(txt)
+            if total > 60000:            # 单篇上限，别把一篇做成几 MB
+                body.append(u"\n（后略）")
+                break
+        if not body:
+            continue
+        out = os.path.join(dest, "%s_%s.md" % (src["name"], str(cid)[:8]))
+        try:
+            io.open(out, "w", encoding="utf-8").write(
+                u"# %s · %s\n> 源自 `%s` 的会话记录（自动摘录，纯文本）\n\n%s\n"
+                % (src["name"], str(cid)[:8], db, "\n\n".join(body)))
+            seen_map[tag] = [int(clen or 0)]
+            made += 1
+        except Exception:
+            pass
+    return made, src["name"]
+
+
+def cleanup_transcribed(agents, archive=True):
+    """清掉早期抄录留下的副本（内容与原生目录重复）。
+
+    安全底线：**删之前先确认源还在** —— 源里找不到这条记录的踪影，就留着
+    （那可能是唯一一份）。默认不硬删，而是移进 `备份/抄录副本_<日期>/`，
+    真要删就把那个文件夹删掉（一步的事，且可反悔）。
+    """
+    import shutil
+    import time as _t
+    prefixes = []
+    for roots in RECORD_ROOTS.values():
+        for r in roots:
+            prefixes.append(r["name"] + "_")
+    prefixes += ["WorkBuddy 会话记忆_", "WorkBuddy 长期记忆_", "Codex 笔记_",
+                 "Codex 会话实录_", "AstrBot 会话工作区_", "自动抄录"]
+    # 先把所有原生记录根的**路径**收集起来，用来判断「源还在不在」
+    live = []
+    for a in (agents or []):
+        if (a.get("kind") or "agent") != "agent":
+            continue
+        for _who, fp, _src in iter_record_files([a], include_digest_cache=False):
+            live.append(fp)
+    for key, roots in RECORD_ROOTS.items():
+        for r in roots:
+            for d in _expand_roots(r["root"]):
+                live.append(d)
+            if r.get("mode") == "digest" and r.get("glob"):
+                # 摘录档的「源」是那些大文件本身（如 .jsonl），也得算进来
+                try:
+                    live.extend(glob.glob(r["glob"], recursive=True))
+                except Exception:
+                    pass
+    live_blob = "\n".join(live).lower()
+    box = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "备份", "抄录副本_" + _t.strftime("%Y%m%d-%H%M"))
+    moved, kept = [], []
+    for a in (agents or []):
+        base = a.get("works_dir") or ""
+        if not base or not os.path.isdir(base):
+            continue
+        for entry in sorted(os.listdir(base)):
+            if not any(entry.startswith(x) for x in prefixes):
+                continue
+            if entry.lower().endswith(".bak_before_agentinventory"):
+                continue
+            src = os.path.join(base, entry)
+            tail = entry.split("_", 1)[1] if "_" in entry else entry
+            tail = os.path.splitext(tail)[0].lower()
+            if tail and tail not in live_blob:
+                kept.append((a.get("name"), entry))       # 源里找不到 → 留着
+                continue
+            try:
+                if archive:
+                    os.makedirs(box, exist_ok=True)
+                    shutil.move(src, os.path.join(box, (a.get("name") or "?") + "_" + entry))
+                elif os.path.isdir(src):
+                    shutil.rmtree(src, ignore_errors=True)
+                else:
+                    os.remove(src)
+                moved.append((a.get("name"), entry))
+            except Exception as e:
+                kept.append((a.get("name"), entry + "（失败：%s）" % str(e)[:30]))
+    return {"moved": moved, "kept": kept, "box": box if archive else "",
+            "live_count": len(live)}
 
 
 def collect_tasks(agents):
@@ -821,6 +1276,43 @@ def collect_tasks(agents):
                     "when": stamp,
                     "mtime": int(mt),
                 })
+    # 第三十七轮（爱卿令）：就地索引 —— 直接读各 Agent 的原生记录根，不再依赖抄录副本
+    for a in (agents or []):
+        if (a.get("kind") or "agent") != "agent":
+            continue
+        pass
+    for owner, fp, src_name in iter_record_files(agents):
+            try:
+                text = open(fp, "r", encoding="utf-8", errors="ignore").read()[:20000]
+                mt = os.path.getmtime(fp)
+                stamp = _t.strftime("%Y-%m-%d %H:%M", _t.localtime(mt))
+            except Exception:
+                continue
+            tasks.append({
+                "key": "task_root_" + re.sub(r"\W+", "_", (owner + "_" + fp)).lower()[:60],
+                "agent": owner,
+                "source": src_name,
+                "title": _task_title(text, os.path.basename(fp)),
+                "did": " ".join(_strip_meta(text).split())[:400] or "（无文字记录）",
+                "participants": _task_participants(text, owner),
+                "artifacts": _task_artifacts(text, []),
+                "log": fp,
+                "when": stamp,
+                "mtime": int(mt),
+            })
+    # 同一份记录可能既被原生读到、又是旧抄录留下的副本 —— 按真实路径去重
+    seen_rp, uniq = set(), []
+    for t in tasks:
+        try:
+            rp = os.path.realpath(t.get("log") or "")
+        except Exception:
+            rp = t.get("log") or ""
+        if rp and rp in seen_rp:
+            continue
+        if rp:
+            seen_rp.add(rp)
+        uniq.append(t)
+    tasks = uniq
     tasks.sort(key=lambda t: -t.get("mtime", 0))
     return tasks
 
@@ -829,7 +1321,7 @@ LOG_STATE_NAME = "agent_logs_state.json"
 
 
 def log_state_path():
-    """抄录水位：放 %LOCALAPPDATA%\<名字>，不动程序旁的数据文件。"""
+    """抄录水位：放 %LOCALAPPDATA%\\<名字>，不动程序旁的数据文件。"""
     base = os.environ.get("LOCALAPPDATA") or HERE
     d = os.path.join(base, "Agent_asset_overview_logs")
     try:
@@ -938,10 +1430,21 @@ def sync_agent_logs(agents, state=None):
         if (a.get("kind") or "agent") != "agent":
             continue
         key = (a.get("key") or "").strip()
-        srcs = LOG_SOURCES.get(key)
+        # 第三十七轮：**只做摘录**这一档（直读档已改成就地索引，不再搬运）。
+        # 摘录产物落进缓存目录 —— 可随时重建，不是唯一副本。
+        # ④ 数据库型（AstrBot 的对话记忆）：摘成 md 落缓存
+        for r in _roots_for(key):
+            if r.get("mode") == "digest_sqlite":
+                n2, who2 = _digest_sqlite(r, st, key)
+                if n2:
+                    n_dig += n2
+                    if who2 not in touched:
+                        touched.append(who2)
+        srcs = [r for r in _roots_for(key)
+                if r.get("mode") == "digest" and r.get("glob")]
         if not srcs:
             continue
-        dest_root = agent_works_dir(a)          # 本应用给它的那格
+        dest_root = digest_cache_dir()          # 摘录产物：缓存目录（非记录夹）
         # 第二十九轮（爱卿令）：抄录产物**直接落进这格**，不再套「自动抄录\」子目录 ——
         # 自动抄录本就是要替掉那段要人手动粘贴的提示词，产物就该长在同一个地方。
         sub = dest_root
@@ -970,7 +1473,7 @@ def sync_agent_logs(agents, state=None):
                     continue                     # 没变过，跳过
                 if src.get("mode") == "digest":
                     out = os.path.join(sub, "%s_%s.md" % (
-                        src["name"], os.path.splitext(base)[0]))
+                        src["name"], os.path.splitext(os.path.basename(fp))[0]))
                     got = _digest_jsonl(fp, out)
                     if got:
                         n_dig += 1

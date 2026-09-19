@@ -410,13 +410,32 @@ TIP_TEXT = {
     "主要项目": "只看你设为「主要项目」的那些：开发日志、已实现的功能、产物在哪",
     "设置主要项目": "增删你要盯的项目（每行一条：项目名 = 关键词1, 关键词2）",
     "重新扫描": "重新检索本机，刷新这份名册",
-    "手动抄录": "立刻把各 Agent 的新日志抄进应用（平时每 10 分钟自动抄一轮）",
+    "接入 Agent": "给各 Agent 接上 MCP 检索、并在它每次必读处放一行指针；内含测试提示词",
+    "检索地址": "登记这个 Agent 自己的记忆/记录目录（让它自报家门，把路径粘进来）",
+    # 第四十一轮（爱卿令）：把「接入 Agent」窗里那几枚按钮的作用写清楚
+    "立即接入/重新复检": "现在就把各 Agent 接一遍（接 MCP、放读取指引），"
+                        "并把结果重新检查——哪些接了、哪些没接、为什么",
+    "复制测试提示词": "复制一段自检提示词：粘给任意 Agent，看它到底通没通"
+                     "（会问它能不能查到你机器上的真实项目，而不是问它『有没有工具』）",
+    "复制读取指引（免MCP）": "复制那份含数据地址的读取指引——不走 MCP 也能用："
+                            "粘进任何 Agent 的人格/设置里即可（对 WorkBuddy、"
+                            "Claude Desktop 这类有信任门槛或没有 MCP 的客户端，"
+                            "这是唯一的办法）",
+    "复制指针原文": "复制那行『先查后答』的短指针——给人读的短版，"
+                   "适合粘进人格文件开头",
+    # 顺带把几个对话框按钮也补上（以前一直没说明）
+    "清理抄录副本": "把早期抄录留下的重复副本移进备份文件夹（删前先确认源还在，"
+                   "源没了的会保留）；确认无误后把那个文件夹整个删掉即可",
+    "＋添加": "加一个要盯的项目（填项目名 + 关键词，逗号或顿号分隔）",
+    "编辑": "改选中项目：项目名与关键词；留空关键词就按项目名匹配",
+    "删除": "从主要项目里去掉选中项（只删设置，不动任何记录文件）",
+    "打开": "在资源管理器里打开这个记录根所在的位置",
+    "记录来源": "各 Agent 的记录长在哪（就地索引，不再抄副本）；可清理早期抄录的重复件",
     "＋添加Agent": "手动登记一个可启动的程序（exe / lnk / bat）",
     "＋导入Skill": "把别处的技能收进本机技能库",
     # 工作台 / 详情窗
     "打开工作区目录": "在资源管理器里打开该 Agent 的工作记录夹",
     "复制文件清单": "把本页清单（类别 / 名字 / 路径）按行拷进剪贴板，便于接力者取用",
-    "更新数据": "打开该 Agent，并给你一段可复制的提示词，让它把工作记录交到应用里",
     "查看/编辑简介": "看简介全文，并可直接改（改完存进自订档，重扫不丢）",
     "打开所在目录": "在资源管理器里打开它所在的目录",
     "打开工作台": "打开它名下那件工作台，看它全部工作文件（括号里是件数）",
@@ -1165,12 +1184,391 @@ class App(tk.Tk):
             ttk.Label(box, text=str(num), style="MetricNum.TLabel",
                       font=("Microsoft YaHei UI", 16)).pack(anchor="w", pady=(3, 0))
 
+    # ---------- 接入 Agent（MCP + 每次必读指针） ----------
+    def _self_exe(self):
+        """本应用的可执行文件：打包后是自身，源码运行时取同目录那枚 exe。"""
+        if getattr(sys, "frozen", False):
+            return sys.executable
+        return os.path.join(HERE, "Agent资产总览.exe")
+
+    def _settings_file(self):
+        return os.path.join(HERE, "MCP设置.json")
+
+    def _load_settings(self):
+        try:
+            d = json.load(open(self._settings_file(), "r", encoding="utf-8"))
+            return d if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_settings(self, d):
+        try:
+            json.dump(d, open(self._settings_file(), "w", encoding="utf-8"),
+                      ensure_ascii=False, indent=1)
+            return True
+        except Exception:
+            return False
+
+    def _auto_onboard(self):
+        """扫描结束后：**发现新 Agent 就自动给它接 MCP、放指针**（爱卿令，写进应用里）。"""
+        try:
+            import agent_onboard
+            if not self._load_settings().get("auto_attach", True):
+                return
+            agents = [a for a in (self.data or [])
+                      if (a.get("kind") or "agent") == "agent"]
+            news = agent_onboard.new_agents(agents)
+            if not news:
+                return
+            r = agent_onboard.attach(agents, self._self_exe(), only_new=True)
+            if r.get("lines"):
+                self.status.configure(
+                    text="新 Agent 已自动接入：%s" % " ｜ ".join(r["lines"])[:140])
+        except Exception:
+            pass
+
+    def onboard_dialog(self):
+        """接入 Agent：接 MCP、放指针、开关、以及**可复制的测试提示词**。"""
+        import agent_onboard
+        dlg = tk.Toplevel(self)
+        dlg.title("接入 Agent")
+        dlg.configure(bg=BG)
+        dlg.transient(self)
+        w, h = self._fit(_px(780), _px(640))
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry("%dx%d+%d+%d" % (w, h, (sw - w) // 2, (sh - h) // 2))
+        pad = ttk.Frame(dlg, padding=(20, 16))
+        pad.pack(fill="both", expand=True)
+        ttk.Label(pad, text="接入 Agent", style="TLabel",
+                  font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
+        ttk.Label(pad, text="给各 Agent 接上 MCP 检索，并在它「每次必读」处放一行指针 —— "
+                            "否则工具在它手边，它也不知道去用。\n"
+                            "改动前一律备份；发现新 Agent 会自动接入。",
+                  style="Hint.TLabel", font=("Microsoft YaHei UI", 9),
+                  justify="left").pack(anchor="w", pady=(4, 10))
+        st = self._load_settings()
+        v_auto = tk.BooleanVar(value=bool(st.get("auto_attach", True)))
+        v_mask = tk.BooleanVar(value=bool(st.get("mask_paths", False)))
+        row = tk.Frame(pad, bg=BG)
+        row.pack(fill="x", pady=(0, 8))
+        tk.Checkbutton(row, text="发现新 Agent 自动接入", variable=v_auto, bg=BG,
+                       fg=FG, activebackground=BG, selectcolor=BG,
+                       font=("Microsoft YaHei UI", 9)).pack(side="left")
+        tk.Checkbutton(row, text="脱敏（把 <用户目录> 折起来，再给模型看）",
+                       variable=v_mask, bg=BG, fg=FG, activebackground=BG,
+                       selectcolor=BG,
+                       font=("Microsoft YaHei UI", 9)).pack(side="left", padx=(16, 0))
+        foot = ttk.Frame(pad)
+        foot.pack(side="bottom", fill="x", pady=(12, 0))
+        body = tk.Frame(pad, bg=BG)
+        body.pack(fill="both", expand=True)
+        txt = tk.Text(body, wrap="word", bg="#ffffff", fg=FG, relief="flat", bd=0,
+                      highlightthickness=1, highlightbackground=LINE,
+                      font=("Microsoft YaHei UI", 10), padx=12, pady=10, height=14)
+        sb = ttk.Scrollbar(body, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        txt.pack(side="left", fill="both", expand=True)
+
+        def show(text):
+            txt.configure(state="normal")
+            txt.delete("1.0", "end")
+            txt.insert("1.0", text)
+            txt.configure(state="disabled")
+
+        def save_switches():
+            d = self._load_settings()
+            d["auto_attach"] = bool(v_auto.get())
+            d["mask_paths"] = bool(v_mask.get())
+            self._save_settings(d)
+            self.status.configure(text="已保存：自动接入 %s ｜ 脱敏 %s"
+                                  % ("开" if v_auto.get() else "关",
+                                     "开" if v_mask.get() else "关"))
+
+        def do_attach():
+            save_switches()
+            agents = [a for a in (self.data or [])
+                      if (a.get("kind") or "agent") == "agent"]
+            r = agent_onboard.attach(agents, self._self_exe(), only_new=False)
+            out = ["【接入报告】", ""]
+            out += r.get("lines") or [r.get("reason") or "（无）"]
+            out += ["", "【测试用提示词 —— 复制粘贴给任意 Agent，看它自检结果】", "",
+                    r.get("test_prompt") or ""]
+            show("\n".join(out))
+            self.status.configure(text="接入完成：%d 项已处理" % len(r.get("lines") or []))
+
+        def copy_prompt():
+            self.clipboard_clear()
+            self.clipboard_append(agent_onboard.TEST_PROMPT)
+            self.status.configure(text="测试提示词已复制 —— 粘给任意 Agent 试试。")
+
+        def copy_read_guide():
+            """复制**免 MCP 的读取指引**：含应用数据地址与查法，
+            可直接粘进任何 Agent 的人格（如 WorkBuddy 的 SOUL.md）。"""
+            self.clipboard_clear()
+            self.clipboard_append(
+                agent_onboard.READ_GUIDE_SKILL.replace("{{APP}}", HERE)
+                .replace("{{VER}}", agent_onboard.GUIDE_VERSION_MARK))
+            self.status.configure(
+                text="读取指引已复制（含数据地址，可直接粘进任何 Agent 的人格）。")
+
+        def copy_pointer():
+            self.clipboard_clear()
+            self.clipboard_append(agent_onboard.POINTER_MD % {"mark": agent_onboard.MARK})
+            self.status.configure(text="指针原文已复制 —— 给不读文件的客户端（如 Claude Desktop）人工粘。")
+
+        for t, fn in (("立即接入 / 重新复检", do_attach), ("复制测试提示词", copy_prompt),
+                      ("复制读取指引（免 MCP）", copy_read_guide),
+                      ("复制指针原文", copy_pointer)):
+            ttk.Button(foot, text=t, style="Act.TButton" if t.startswith("立即")
+                       else "Tab.TButton", command=fn).pack(side="left", padx=(0, 6))
+        ttk.Button(foot, text="关 闭", style="Tab.TButton",
+                   command=lambda: (save_switches(), dlg.destroy())).pack(side="right")
+        # 开场先跑一遍，把现状摆出来
+        do_attach()
+        dlg.bind("<Escape>", lambda _e: (save_switches(), dlg.destroy()))
+
+    # ---------- 检索地址（用户手工登记，让 Agent 自报家门） ----------
+    def record_paths_dialog(self, agent=None):
+        """某个 Agent 的【检索地址】：把 Agent 自报的目录粘进来，即纳入主动检索。"""
+        try:
+            mod = self._scanner_mod()
+        except Exception:
+            mod = None
+        name = (agent or {}).get("name") or ""
+        key = ((agent or {}).get("key") or name).strip().lower()
+        dlg = tk.Toplevel(self)
+        dlg.title("检索地址 · %s" % (name or "全部"))
+        dlg.configure(bg=BG)
+        dlg.transient(self)
+        w, h = self._fit(_px(780), _px(580))
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry("%dx%d+%d+%d" % (w, h, (sw - w) // 2, (sh - h) // 2))
+        pad = ttk.Frame(dlg, padding=(20, 16))
+        pad.pack(fill="both", expand=True)
+        ttk.Label(pad, text="检索地址 · %s" % (name or ""), style="TLabel",
+                  font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
+        ttk.Label(pad,
+                  text=u"让这个 Agent 「自报家门」（问它：你的记忆都存在哪），把报出来的路径"
+                       u"粘到这里 —— 那一处立刻纳入主动检索。应用会自动探测体量，"
+                       u"并建议「直读」还是「摘录」。",
+                  style="Hint.TLabel", font=("Microsoft YaHei UI", 9), justify="left",
+                  wraplength=_px(710)).pack(anchor="w", pady=(4, 10))
+        foot = ttk.Frame(pad)
+        foot.pack(side="bottom", fill="x", pady=(12, 0))
+        body = tk.Frame(pad, bg=BG)
+        body.pack(fill="both", expand=True)
+        txt = tk.Text(body, wrap=u"word", bg="#ffffff", fg=FG, relief="flat", bd=0,
+                      highlightthickness=1, highlightbackground=LINE,
+                      font=("Microsoft YaHei UI", 9), padx=12, pady=10)
+        sb = ttk.Scrollbar(body, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        txt.pack(side="left", fill="both", expand=True)
+
+        def refresh():
+            lines = [u"【已登记的检索地址】"]
+            extra = (mod.load_extra_roots() if mod else {}).get(key) or []
+            if not extra:
+                lines.append(u"  （还没有）—— 先把下面的问话发给它，再回来粘路径。")
+            for it in extra:
+                pr = mod.probe_path(it.get("path")) if mod else {}
+                lines.append(u"  · " + str(it.get("path")))
+                lines.append(u"      %s ｜ %s ｜ %s 个文件 ｜ %s"
+                             % (it.get("name") or u"（未命名）",
+                                u"直读" if (it.get("mode") or "direct") == "direct"
+                                else u"摘录",
+                                pr.get("files", u"?"),
+                                (u"%.1f MB" % (pr.get("bytes", 0) / 1048576))
+                                if pr.get("exists") else u"路径不存在 ✗"))
+            lines += [u"", u"【内置记录根（本来就检索）】"]
+            for r in (mod.record_roots_of(agent) if mod and agent else []):
+                lines.append(u"  · %-20s %-6s %s 个文件 ｜ %s"
+                             % (r["name"],
+                                {"direct": u"直读", "digest": u"摘录",
+                                 "skip": u"只登记", "digest_sqlite": u"摘录"}.get(
+                                    r["mode"], r["mode"]),
+                                r["count"], r["root"]))
+            txt.configure(state=u"normal")
+            txt.delete("1.0", "end")
+            txt.insert("1.0", u"\n".join(lines))
+            txt.configure(state=u"disabled")
+
+        def add():
+            import tkinter.filedialog as _fd
+            p2 = _fd.askdirectory(title=u"选这个 Agent 记忆/记录所在目录", parent=dlg)
+            if not p2:
+                return
+            pr = mod.probe_path(p2) if mod else {}
+            mode = pr.get("suggest") or "direct"
+            ok = messagebox.askyesno(
+                u"加入检索",
+                u"路径：%s\n\n探测：%s 个文件 ｜ %.2f MB\n主要格式：%s\n\n"
+                u"建议处理：%s\n\n就按这个加入？"
+                % (p2, pr.get("files", u"?"), pr.get("bytes", 0) / 1048576,
+                   u"、".join(u"%s×%d" % (e, n) for e, n in (pr.get("exts") or [])[:4]),
+                   u"摘录（体量大或不全是纯文本）" if mode == "digest" else u"直读"),
+                parent=dlg)
+            if not ok:
+                return
+            d2 = mod.load_extra_roots() if mod else {}
+            d2.setdefault(key, []).append({
+                "path": p2, "mode": mode,
+                "name": os.path.basename(p2.rstrip(u"\\/")) or p2})
+            mod.save_extra_roots(d2)
+            mod.invalidate_roots()
+            refresh()
+            self.status.configure(text=u"已登记检索地址：%s（%s）" % (p2, mode))
+
+        def remove():
+            extra = (mod.load_extra_roots() if mod else {}).get(key) or []
+            if not extra:
+                return
+            if messagebox.askyesno(u"移除", u"移除最后一条：\n%s ？"
+                                   % extra[-1].get("path"), parent=dlg):
+                d2 = mod.load_extra_roots()
+                d2[key] = extra[:-1]
+                mod.save_extra_roots(d2)
+                mod.invalidate_roots()
+                refresh()
+
+        def copy_ask():
+            fp2 = os.path.join(HERE, u"通用资源", u"skills", u"agent-self-report",
+                               u"SKILL.md")
+            body_txt = u""
+            try:
+                t2 = io.open(fp2, encoding="utf-8").read()
+                i2 = t2.find(u"请只做一件事")
+                body_txt = t2[i2:] if i2 > 0 else t2
+            except Exception:
+                body_txt = (u"请只做一件事，不要做任何别的操作：如实告诉我，你自己的"
+                            u"记忆/会话记录/工作记录/产出文件都存放在哪些目录"
+                            u"（绝对路径、文件数、体量、是文本还是二进制）。"
+                            u"不确定就说不确定，不要编。")
+            self.clipboard_clear()
+            self.clipboard_append(body_txt)
+            self.status.configure(text=u"「自报家门」问话已复制 —— 粘给这个 Agent 试试。")
+
+        ttk.Button(foot, text=u"＋ 添加地址", style="Act.TButton",
+                   command=add).pack(side="left")
+        ttk.Button(foot, text=u"移除最后一条", style="Tab.TButton",
+                   command=remove).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text=u"复制自报家门问话", style="Act.TButton",
+                   command=copy_ask).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text=u"关闭", style="Tab.TButton",
+                   command=dlg.destroy).pack(side="right")
+        refresh()
+
+    # ---------- 记录来源（就地索引） ----------
+    def _scanner_mod(self):
+        import importlib.util
+        fp = os.path.join(HERE, "scan_agents_apps.py")
+        if not os.path.isfile(fp):
+            return None
+        spec = importlib.util.spec_from_file_location("scanner_app", fp)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["scanner_app"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+    def record_sources_dialog(self):
+        """各 Agent 的记录根清单 —— **就地索引**，不再抄副本。
+
+        第三十七轮（爱卿令）：既然记录本来就长在各家自己的目录里，
+        搜索与工作台直接读那些目录即可 —— 新内容立刻可查，也不会再
+        「源漏一处就永远抄不到」。
+        """
+        dlg = tk.Toplevel(self)
+        dlg.title("记录来源")
+        dlg.configure(bg=BG)
+        dlg.transient(self)
+        w, h = self._fit(_px(760), _px(560))
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry("%dx%d+%d+%d" % (w, h, (sw - w) // 2, (sh - h) // 2))
+        pad = ttk.Frame(dlg, padding=(20, 16))
+        pad.pack(fill="both", expand=True)
+        ttk.Label(pad, text="记录来源（就地索引）", style="TLabel",
+                  font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
+        ttk.Label(pad, text="各 Agent 的记录**长在哪**。搜索与工作台直接读这些目录 —— "
+                            "不复制、不落后；只有过大的原始实录会摘录一份放进缓存。",
+                  style="Hint.TLabel", font=("Microsoft YaHei UI", 9),
+                  justify="left", wraplength=_px(700)).pack(anchor="w", pady=(4, 10))
+        foot = ttk.Frame(pad)
+        foot.pack(side="bottom", fill="x", pady=(12, 0))
+        body = tk.Frame(pad, bg=BG)
+        body.pack(fill="both", expand=True)
+        try:
+            mod = self._scanner_mod()
+            agents = [a for a in (self.data or [])
+                      if (a.get("kind") or "agent") == "agent"]
+            rows = []
+            for a in agents:
+                for r in (mod.record_roots_of(a) if mod else []):
+                    rows.append((a.get("name"), r))
+            # 没有对应客户端的记录根（如桌面）单独列
+            if mod:
+                known = {mod.agent_key_of(a) for a in agents}
+                for key, roots in (mod.RECORD_ROOTS or {}).items():
+                    if key in known:
+                        continue
+                    for r in roots:
+                        rows.append((mod.AGENT_ALIASES.get(key, key), {
+                            "name": r["name"], "root": r["root"],
+                            "mode": r.get("mode"),
+                            "found": bool(mod._expand_roots(r["root"])),
+                            "count": len(mod._walk_root(r["root"],
+                                                        r.get("ext") or mod.ROOT_EXTS,
+                                                        r.get("depth", 4)))}))
+            if not rows:
+                tk.Label(body, text="（本机没有登记任何记录根）", bg=BG, fg=FAINT,
+                         font=F_HINT).pack(anchor="w")
+            for who, r in rows:
+                row = tk.Frame(body, bg=BG)
+                row.pack(fill="x", pady=2)
+                mode_txt = {"direct": "直接读", "digest": "摘录缓存",
+                            "skip": "只登记（格式读不了）"}.get(r.get("mode"), r.get("mode"))
+                tk.Label(row, text="%s ｜ %s" % (who, r["name"]), bg=BG, fg=FG,
+                         font=F_CARD_D, anchor="w").pack(side="left")
+                tk.Label(row, text="%s ｜ %s ｜ %d 个" % (mode_txt,
+                                                       "在" if r.get("found") else "没找到",
+                                                       r.get("count") or 0),
+                         bg=BG, fg=FAINT, font=F_HINT).pack(side="left", padx=(8, 0))
+                ttk.Button(row, text="打开", style="Tab.TButton",
+                           command=lambda pth=r["root"]: self.open_path(
+                               pth if not any(c in pth for c in "*?") else
+                               os.path.dirname(pth))
+                           ).pack(side="right")
+        except Exception as e:
+            tk.Label(body, text="读取记录根失败：%s" % e, bg=BG, fg=FAINT,
+                     font=F_HINT).pack(anchor="w")
+
+        def do_clean():
+            import tkinter.messagebox as mb
+            try:
+                mod = self._scanner_mod()
+                agents = [a for a in (self.data or [])
+                          if (a.get("kind") or "agent") == "agent"]
+                r = mod.cleanup_transcribed(agents, archive=True)
+                mb.showinfo("清理抄录副本",
+                            "移走重复副本 %d 项，保留 %d 项。\n\n归档在：\n%s\n\n"
+                            "（确认无误后，把那个文件夹整个删掉即可。）"
+                            % (len(r["moved"]), len(r["kept"]), r["box"]), parent=dlg)
+                self.status.configure(text="已清理抄录副本 %d 项（移入备份）。"
+                                           % len(r["moved"]))
+            except Exception as e:
+                mb.showerror("清理失败", str(e)[:200], parent=dlg)
+
+        ttk.Button(foot, text="清理抄录副本", style="Act.TButton",
+                   command=do_clean).pack(side="left")
+        ttk.Button(foot, text="关闭", style="Tab.TButton",
+                   command=dlg.destroy).pack(side="right")
+
     # ---------- 快捷键 ----------
     def _bind_shortcuts(self):
         """键盘也走得通：搜、扫、切栏、抄录。
 
         Ctrl+F 聚焦搜索　F5 重新扫描　Ctrl+1..4 切栏
-        Ctrl+L 手动抄录　Ctrl+P 设置主要项目　Esc 清空搜索
+        Ctrl+L 重新扫描（并顺手重建摘录缓存）　Ctrl+P 设置主要项目　Esc 清空搜索
         """
         def on(seq, fn):
             try:
@@ -1197,7 +1595,9 @@ class App(tk.Tk):
         on("<Control-F>", focus_search)
         on("<Escape>", clear_search)
         on("<F5>", lambda _e: (self.rescan(), "break")[1])
-        on("<Control-l>", lambda _e: (self._autolog_now(), "break")[1])
+        # 第三十八轮：「手动抄录」已撤（就地索引后它只剩重建摘录缓存，
+        # 那是后台十分钟一轮的事）。Ctrl+L 改为「重新扫描」，顺手也催一次摘录。
+        on("<Control-l>", lambda _e: (self._autolog_now(), self.rescan(), "break")[2])
         on("<Control-p>", lambda _e: (self.projects_dialog(), "break")[1])
         for i, (key, _label) in enumerate(CATS, 1):
             on("<Control-Key-%d>" % i,
@@ -1306,6 +1706,12 @@ class App(tk.Tk):
         keys = ("已实现", "支持", "新增", "完成", "上线", "修好", "搞定", "做好了")
         out, seen = [], set()
         for t in tasks:
+            # 第四十轮：与 MCP 那份对齐 —— 跳过纯粹是噪音的来源
+            #   （转写实录、会话工作区、总索引）；「会话记忆」与「笔记」是好料，放行。
+            _base = os.path.basename(str(t.get("log") or ""))
+            if any(k in _base for k in (u"会话实录", u"会话工作区", u"总索引",
+                                        u"raw_memories")):
+                continue
             txt = str(t.get("did") or "")
             try:
                 txt = open(t.get("log") or "", "r", encoding="utf-8",
@@ -1846,7 +2252,7 @@ class App(tk.Tk):
         return ""
 
     def _tips_on_class(self):
-        """**按控件类**给所有 ttk.Button 挂悬停说明。
+        """按控件类**给所有 ttk.Button 挂悬停说明。
 
         这是「以后新加的也要有」的正解：类级绑定是整解释器一份，
         此后任何窗里新造的 ttk.Button 都自动受管，不必再逐个手挂。
@@ -1990,7 +2396,7 @@ class App(tk.Tk):
 
         # ---------- 第二行：当前栏自己的动作（跟着页签走） ----------
         # 第三十轮（爱卿令）：主界面按钮太多，按栏目归类 ——
-        #   Agents      → ＋ 添加 Agent ／ 手动抄录
+        #   Agents      → ＋ 添加 Agent ／ 接入 Agent ／ 记录来源
         #   技能        → ＋ 导入 Skill
         #   主要项目    → 设置主要项目
         # 于是这一行会随页签整体变化，主条也终于不再挤成一团。
@@ -2002,9 +2408,12 @@ class App(tk.Tk):
         self.btn_add = ttk.Button(self.act_bar, text="＋ 添加 Agent",
                                   style="Act.TButton",
                                   command=self.add_agent_dialog)
-        self.btn_logs = ttk.Button(self.act_bar, text="手动抄录",
-                                   style="Act.TButton",
-                                   command=self._autolog_now)
+        self.btn_roots = ttk.Button(self.act_bar, text="记录来源",
+                                    style="Tab.TButton",
+                                    command=self.record_sources_dialog)
+        self.btn_onboard = ttk.Button(self.act_bar, text="接入 Agent",
+                                      style="Act.TButton",
+                                      command=self.onboard_dialog)
         self.btn_skill = ttk.Button(self.act_bar, text="＋ 导入 Skill",
                                     style="Act.TButton",
                                     command=self.import_skill_dialog)
@@ -2014,7 +2423,7 @@ class App(tk.Tk):
         self._refresh_actions()
 
     ACTIONS = {
-        "agents": ("btn_add", "btn_logs"),
+        "agents": ("btn_add", "btn_onboard", "btn_roots"),
         "skills": ("btn_skill",),
         "tasks": ("btn_proj",),
     }
@@ -2049,7 +2458,7 @@ class App(tk.Tk):
                 empty._eyebrow = True
                 empty.pack(side="left")
             elif "btn_logs" in names:
-                # 只有带「手动抄录」的栏才提示这个快捷键（别的栏提示它没意义）
+                # 快捷键提示只挂在需要的栏上
                 cap = ttk.Label(self.act_bar, text="抄录快捷键", style="Eyebrow.TLabel")
                 cap._eyebrow = True
                 cap.pack(side="right", padx=(0, 6))
@@ -3648,10 +4057,10 @@ class App(tk.Tk):
         return os.path.join(HERE, "通用资源", "工作记录", nm)
 
     def _update_data(self, row):
-        """「更新数据」：直接打开该 Agent，并弹置顶悬浮窗摆好提示词供复制。
+        """「整理记录」：打开该 Agent，并弹置顶悬浮窗摆好提示词供复制。
 
-        数据落在本应用给它留的那格文件夹（通用资源\工作记录\<Agent>），
-        扫描器按格收编，故导完重扫一次就能像 WorkBuddy 那样完整显示。
+        记录仍落在本应用给它留的那格（通用资源\工作记录\<Agent>）—— 那一格
+        是**就地索引**的一个记录根，所以整理完点「重新扫描」就即刻可搜、可见。
         """
         agent = row.get("agent") or {}
         name = row.get("title") or agent.get("name") or ""
@@ -3660,14 +4069,17 @@ class App(tk.Tk):
             os.makedirs(folder, exist_ok=True)
         except Exception:
             pass
-        prompt = ("将我与你的所有工作记录整理并记录/更新在这个文件夹"
-                  "（此应用对应的专门存储各个agent工作记录的文件夹）里：\n\n"
+        prompt = ("请把「我与你这次（以及之前未归档的）工作」整理成记录，"
+                  "存进这个文件夹 —— 本应用专门给各个 Agent 存工作记录的那一格：\n\n"
                   "%s\n\n"
                   "要求：每条记录单独成文件（或按项目分文件夹），文件名写清是什么；"
-                  "整理完回到「Agent 资产总览」，点右上角「重新扫描」，"
-                  "这些数据就会出现在「工作台 · %s」里。\n\n"
-                  "（本应用平时会自动抄录各 Agent 的日志到同一个文件夹，"
-                  "此段提示词只是需要你手动催一轮时才用。）" % (folder, name))
+                  "每条里写清**日期、干了什么、结论/决定、产物完整路径**。"
+                  "整理完回到「Agent 资产总览」，点「重新扫描」，"
+                  "这些稿子会出现在「工作台 · %s」里。\n\n"
+                  "为什么值得整理：应用的检索现在**直接读你的原始日志**（不再抄副本），"
+                  "所以不整理也能搜到；但整理稿能让人一眼看出「哪天、做了什么、结论、产物在哪」。"
+                  "「主要项目」里的『已实现的功能』和『开发日志』正是从整理稿里摘出来的 —— "
+                  "原始会话实录与记忆噪音太大，会被跳过。" % (folder, name))
         self._prompt_float(name, prompt, folder)
         if agent.get("exe"):
             self.start_agent(agent)          # 直接打开对应 agent 的界面
@@ -3842,8 +4254,8 @@ class App(tk.Tk):
                  font=F_TAG).pack(side="left", padx=(10, 0))
         # 右上角：说明这一页的记录是怎么来的（爱卿指定的位置）
         tk.Label(head,
-                 text="自动抄录：本应用每 10 分钟把这个 Agent 的日志抄进本页工作区；\n"
-                      "急用时点工具条的「手动抄录」催一轮即可。",
+                 text="记录就地读取：本格是这个 Agent 的记录夹（整理稿放这儿）；\n"
+                      "它各处的原始记录，应用也直接就地读，不必搬运。",
                  bg=BG, fg=FAINT, font=F_HINT, justify="right"
                  ).pack(side="right")
 
@@ -3863,14 +4275,25 @@ class App(tk.Tk):
         ttk.Button(bar, text="复制文件清单", style="Tab.TButton",
                    command=lambda: self._copy_works(works)
                    ).pack(side="left", padx=(6, 0))
+        # 第四十四轮（爱卿之策）：让 Agent 自报家门，把路径粘进这里 ——
+        # 那一处即纳入主动检索，比程序去猜各家目录结构靠谱。
+        ttk.Button(bar, text="检索地址", style="Tab.TButton",
+                   command=lambda a=agent: self.record_paths_dialog(a)
+                   ).pack(side="left", padx=(6, 0))
         if agent.get("exe"):
             ttk.Button(bar, text="启动 %s" % agent.get("name", ""),
                        style="Tab.TButton",
                        command=lambda a=agent: self.start_agent(a)
                        ).pack(side="left", padx=(6, 0))
-        ttk.Button(bar, text="更新数据", style="Tab.TButton",
-                   command=lambda rr=row: self._update_data(rr)).pack(side="right",
-                                                                      padx=(0, 8))
+        # 第三十八轮（爱卿问：这功能是不是可以不要了）：**留着，但改定位** ——
+        # 就地索引之后，原始日志本来就能搜到，故它不再是「让记录能被找到」，
+        # 而是「让记录更好用」：整理稿是「已实现的功能」与「项目全貌」的原料，
+        # 原始会话实录噪音太大，摘录时会被跳过。
+        # 第四十轮（爱卿问：整理记录还需要吗）—— **撤掉按钮**。
+        #   实测：Agent 自己写的会话记忆质量与整理稿相当，而它**不用请就写**；
+        #   就地索引又already把它当记录读，故这一步纯属多余。
+        #   `self._update_data` 保留未删（它生成的那段提示词仍有价值：
+        #   想让人/Agent 写一份整理稿时，随时可以在对话里直接说）。
         ttk.Button(bar, text="关闭", style="Tab.TButton",
                    command=win.destroy).pack(side="right")
 
@@ -4446,9 +4869,33 @@ class App(tk.Tk):
         self.btn_rescan.configure(text="重新扫描", state="normal")
         self.refresh()
         self.status.configure(text=msg + " · 共 %d 项。" % len(self.rows))
+        self._auto_onboard()      # 新 Agent 一出现就自动接 MCP + 放指针
+
+
+def _hide_console():
+    """把控制台窗口藏掉。
+
+    主 exe 现在以**控制台模式**打包 —— 因为 MCP 的数据通道就是 stdin/stdout，
+    而窗口模式下 PyInstaller 会把这两条流指向空设备，服务端发不出也收不到报文。
+    代价是双击时会闪出一枚黑窗口，故图形界面一启动就把它隐藏，观感与从前一致。
+    """
+    try:
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)      # SW_HIDE
+    except Exception:
+        pass
 
 
 def main():
+    # 第三十三轮（爱卿令：直接上 MCP）：同一枚 exe 兼两个身份 ——
+    # 不带参数是图形界面；带 --mcp 则作 MCP 服务端（stdio），
+    # 任何支持 MCP 的 Agent 都能直接检索本应用整合的信息。
+    if "--mcp" in sys.argv:
+        import agent_mcp
+        return agent_mcp.serve()
+    _hide_console()                  # 图形界面：藏掉控制台那枚黑窗口
     app = App()
     app.mainloop()
 

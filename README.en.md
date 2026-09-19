@@ -2,8 +2,6 @@
 
 [中文](README.md) ｜ **English**
 
-> `AI agent inventory` · `skill manager` · `MCP server inventory` · `session log aggregator` · `cross-agent project tracker` · local-first, no upload
-
 > Scans a Windows machine for the AI agents, skills, MCP servers and projects
 > scattered across it, and lays them out as one clickable inventory. Click a card to open
 > its workbench — or launch the agent itself.
@@ -79,6 +77,46 @@ work records they leave behind while it is at it.
 - Empty columns hide themselves, tab included; anything not found is simply not shown;
 - The visual design follows a restrained "warm monochrome, hairline borders, near-black text,
   one solid accent" rule — colour is reserved for meaning.
+
+## MCP server: let other agents look up this machine
+
+The app doubles as **an MCP server** (stdio, no third-party dependencies, protocol
+implemented by hand). The same exe runs as the server with `--mcp`; double-click it
+without arguments for the GUI.
+
+Eight tools — all scanning **locally**, with only the matching snippets entering the
+model context (token-friendly):
+
+| Tool | What it does |
+|---|---|
+| `inventory_index` | A one-page index (~266 tokens): record sources with file counts / latest dates, plus the main-project list |
+| `inventory_overview` | Machine overview: column counts, main projects, who worked in the last 7 days |
+| `inventory_search` | Full-text search across all columns and **every agent's work records** (returns file, line, context) |
+| `inventory_project` | One project in full: implemented features / dev log / full artifact paths |
+| `inventory_agents` | Agent roster (executable, record folder, blurb) |
+| `inventory_recent` | What each agent did in the last N days |
+| `inventory_skills` | Skill library search |
+| `inventory_reindex` | Re-scan the machine (optionally rebuild the digest cache) |
+
+### Let an agent report its own home
+
+No need to guess where each client keeps its data — **ask it**:
+
+1. Open an agent's **workbench** → click **【检索地址】** → "复制自报家门问话"
+2. Paste that prompt into the agent's chat; it reports its own memory/record folders
+   (absolute paths, file counts, sizes, text or binary)
+3. Back in the app, click **【＋ 添加地址】**, pick the folder and confirm
+   (the app probes the size and suggests direct-read vs. digest)
+
+The rule written into the personas is **"search before answering, every turn"** —
+you never have to say "do you remember...".
+
+### Records are read in place
+
+Each agent's records are read **where they live** (no copies): WorkBuddy's memory and
+session archives, Codex notes and transcripts, AstrBot's conversation memory and
+workspaces, text files on the Desktop. Oversized raw transcripts (a 10+ MB jsonl) are
+**digested into readable text** in a cache that can be rebuilt at any time.
 
 ## Quick start
 

@@ -122,6 +122,10 @@ def collect():
         "WorkBuddy": os.path.join(HOME, ".workbuddy", "mcp.json"),
         "Cursor": os.path.join(HOME, ".cursor", "mcp.json"),
         "Claude Desktop": os.path.join(os.environ.get("APPDATA", ""), "Claude", "claude_desktop_config.json"),
+        # 第三十四轮（爱卿问：「AstrBot 为什么没接入」）——
+        #   AstrBot 的 MCP 注册表在 ~\.astrbot\data\mcp_server.json，结构与别家同为
+        #   {"mcpServers": {...}}，先前漏扫了这一处，应用里便永远见不到 AstrBot 那一列。
+        "AstrBot": os.path.join(HOME, ".astrbot", "data", "mcp_server.json"),
     }.items():
         if os.path.isfile(p):
             try:
@@ -149,8 +153,16 @@ def collect():
                 continue
             if _private_mcp(cm.group(1)):    # 私有运行时，不算公共 MCP
                 continue
+            _cmd = cm.group(1)
+            # 配置里可能有 \uXXXX 转义（TOML 与 JSON 都允许），解成真字再入册，
+            # 否则 MCP 栏里会显示成「u89c8.exe」这种半截路径
+            try:
+                _cmd = re.sub(r"\\u([0-9a-fA-F]{4})",
+                              lambda m: chr(int(m.group(1), 16)), _cmd)
+            except Exception:
+                pass
             R["mcp"].append({"client": "Codex", "name": name,
-                             "command": cm.group(1), "config": codex})
+                             "command": _cmd, "config": codex})
 
     # ★ 第十八轮（爱卿令）：「把插件栏永久删除」——
     #   原先此处读 `~/.workbuddy/plugins/installed_plugins.json`，把 WorkBuddy 的

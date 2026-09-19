@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""PyInstaller 规格文件：单文件、无控制台、图标可选。
-
-用法（在仓库根目录执行）：
-    uv run pyinstaller --noconfirm scripts/build_exe.spec
+"""PyInstaller 规格：单文件 exe（仓库版，供 CI 用）。
 
 要点：
-  · 源码在 ../src；`datas` 逐件判断存在才带上 —— 采集器（scan_agents*.py）是
+  · 源码在 ../src；`datas` 逐件判断存在才带上 —— 采集器与 MCP/接入模块是
     运行期用 importlib 动态载入的，必须随包带走。
-  · 路径不写死：由 spec 自身位置推导，换台电脑重打包也不必改。
-  · `hiddenimports` 里那几件标准库是给动态载入的采集器用的 —— PyInstaller
-    静态分析扫不到，不带上的话打包后一跑就 ModuleNotFoundError: No module
-    named 'glob'。
+  · **控制台模式**（console=True）：同一枚 exe 兼两个身份 ——
+      不带参数双击 → 图形界面（启动时自行隐藏控制台窗口，见 _hide_console()）
+      带 --mcp      → MCP 服务端（stdio 通道在窗口模式下不可靠，故此处必须 console）
+  · exe 名用 ASCII（AgentAssetOverview），免得 CI 与各平台对中文名处理不一致；
+    本机自用那份另有一枚中文名规格。
 """
 import os
 
@@ -20,7 +18,8 @@ SRC = os.path.join(ROOT, "src")
 
 datas = []
 for _f in ["agent_inventory.json", "agents.json", "scan_agents.py",
-           "scan_agents_apps.py", "glass_widget.py"]:
+           "scan_agents_apps.py", "glass_widget.py",
+           "agent_mcp.py", "agent_onboard.py"]:
     _p = os.path.join(SRC, _f)
     if os.path.isfile(_p):
         datas.append((_p, "."))
@@ -29,8 +28,6 @@ for _d in ["agent_icons"]:
     if os.path.isdir(_p):
         datas.append((_p, _d))
 
-_icon = os.path.join(SRC, "app_icon.ico")
-
 a = Analysis(
     [os.path.join(SRC, "agent_inventory_app.py")],
     pathex=[SRC],
@@ -38,12 +35,11 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         "tkinter", "tkinter.ttk", "tkinter.font",
-        "glass_widget",
-        # 动态载入的采集器用到的标准库，静态分析扫不到，须显式列出
+        "glass_widget", "agent_mcp", "agent_onboard",
         "glob", "time", "hashlib", "datetime",
         "importlib", "importlib.util", "json", "re", "shutil", "subprocess",
-        "os", "sys", "math", "ctypes", "ctypes.wintypes",
-        "tkinter.filedialog", "os.path",
+        "os", "sys", "math", "ctypes", "ctypes.wintypes", "sqlite3",
+        "tkinter.filedialog", "os.path", "io",
     ],
     hookspath=[],
     runtime_hooks=[],
@@ -53,17 +49,11 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas,
-    [],
+    pyz, a.scripts, a.binaries, a.datas, [],
     name="AgentAssetOverview",
     debug=False,
-    bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,
-    disable_windowed_traceback=False,
-    icon=_icon if os.path.isfile(_icon) else None,
+    console=True,          # MCP 服务端需要真正的 stdio
+    icon=os.path.join(SRC, "app_icon.ico"),
 )

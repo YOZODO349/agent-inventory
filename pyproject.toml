@@ -1,6 +1,6 @@
 [project]
 name = "agent-asset-overview"
-version = "0.5.2"
+version = "0.5.3"
 description = "把本机散落的 AI Agent 客户端 / Skill / MCP 服务 / 插件 / 工具，扫成一张可点的名册"
 readme = "README.md"
 requires-python = ">=3.9"
