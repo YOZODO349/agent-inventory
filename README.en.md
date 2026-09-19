@@ -1,151 +1,185 @@
-> *Screenshots use placeholder data — no real paths or project names.*
+# Agent Asset Overview
 
 [中文](README.md) ｜ **English**
 
-> Scans a Windows machine for the AI agents, skills, MCP servers and projects
-> scattered across it, and lays them out as one clickable inventory. Click a card to open
-> its workbench — or launch the agent itself.
+> `AI agent inventory` · `MCP server` · `skill manager` · `record index` · local-first, no upload
+
+Scans a Windows machine for the AI agents, skills, MCP servers and projects scattered across it —
+and **indexes their memories and work records in place**, so the agents can look them up themselves.
 
 ![Main window](docs/screenshot.en.png)
 
-*(Both screenshots use placeholder data.)*
+> *Screenshots use placeholder data — no real paths or project names.*
 
 ## Download (Windows, no install)
 
-Grab `AgentAssetOverview.exe` from the **[latest release](https://github.com/cduxiu349/agent-inventory/releases/latest)** and double-click it:
+Grab `AgentAssetOverview.exe` from the **[latest release](https://github.com/YOZODO349/agent-inventory/releases/latest)**:
 
-- **No Python required**, nothing to configure;
-- On first launch it scans **this** machine — the inventory carries an origin stamp, so a file
-  carried over from someone else's computer is detected and re-scanned;
-- Put it in a normal folder before running: it writes its data files next to itself
-  (falling back to `%LOCALAPPDATA%` if that location is not writable, e.g. inside a zip);
-- On high-DPI displays (125% / 150% / 200% scaling) the UI is **rendered natively** — no bitmap
-  blur — and window sizes are clamped to the screen so nothing runs off the usable area.
+- **No Python required**, nothing to configure; **no third-party dependencies** (the GUI is stdlib tkinter);
+- On first launch it scans **this** machine; the inventory carries an origin stamp, so a file from
+  someone else's computer is discarded and re-scanned;
+- **One exe, two roles**: double-click for the GUI; launch it with `--mcp` and it is an
+  **MCP server** — that is how other agents query your inventory;
+- High-DPI aware (125/150/200%); window sizes are clamped to the usable screen area.
 
 ## Why
 
-Anyone who works with AI tools ends up with a pile of them: coding assistants, chat bots,
-image-generation pipelines, dozens of skills and MCP servers. They hide in `AppData`, in
-home-directory dotfiles, in each vendor's own config. Move to a new machine and you have to
-hunt them down again — and after a while you forget what you even installed.
+Anyone working with AI tools accumulates them: coding assistants, chat bots, image pipelines,
+dozens of skills and MCP servers. The bigger problem is that **each one is amnesiac**:
 
-This tool does one thing: **finds them all and puts them on one table** — and gathers up the
-work records they leave behind while it is at it.
+- things you told agent A last week are unknown to agent B;
+- a month later agent A itself has forgotten;
+- and you no longer remember where "that project" actually stands.
+
+So this tool does three things:
+
+1. **Puts everything on one table** — agents, skills, MCP servers and main projects at a glance;
+2. **Indexes their memories in place** — each agent's records are read *where they live*, no copies;
+3. **Hands that index back to the agents** — via MCP, plus a **"search before answering, every turn"**
+   rule written into each client's always-read place.
 
 ## Four columns
 
 | Column | What it shows |
 |---|---|
-| **Agents** | Installed agent clients — built-in registry, plus desktop / Start-menu shortcuts and a last-resort disk search. **Click a card to open its workbench.** |
-| **Skills** | User-level and project-level skills (reads `SKILL.md` frontmatter). Skills that belong to one family are collapsed into a single **bundle card**. |
-| **MCP Servers** | MCP registrations found in WorkBuddy / Cursor / Claude Desktop / Codex configs. **Only portable ones are listed** — entries pointing into a client's private runtime directory are filtered out. |
-| **Main projects** | The projects you actually care about: dev log, implemented features, and where the artifacts live — on one page. |
+| **Agents** | Installed agent clients (built-in registry + shortcuts + a last-resort disk search). Each shows its record count; **click a card to open its workbench** |
+| **Skills** | User-level and project-level skills (reads `SKILL.md` frontmatter); same-family skills collapse into one **bundle card** |
+| **MCP servers** | Registrations from WorkBuddy / Cursor / Claude Desktop / AstrBot / Codex. **Only portable ones** — entries tied to a client's private runtime directory are filtered out |
+| **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page |
 
-### Every agent gets a workbench
+## Records: **indexed in place, never copied** (the big change in this release)
 
-- **Workbench**: the agent's blurb on top, its **entire work record** below;
-- **Update data**: opens the agent and hands you a ready-to-paste prompt that tells it where to
-  put its work records inside this app;
-- **Auto-transcription**: every 10 minutes the app copies each agent's logs into that same
-  folder (there is also a manual "手动抄录" button in the toolbar). A watermark means unchanged
-  files are never copied twice, and oversized session transcripts are **summarised into readable text**;
-- **Editable blurb**: each agent can have its own blurb, stored in `agent_intros.json` and kept
-  across re-scans.
+Records are read **where they already live**:
 
-### Search
+| Source | Location | Handling |
+|---|---|---|
+| WorkBuddy session memory | `~/WorkBuddy/*/.workbuddy/memory/` | direct |
+| WorkBuddy long-term memory | `~/.workbuddy/memory/` | direct |
+| **WorkBuddy session archives** | `~/.workbuddy/projects/*/*.jsonl` (10+ MB each) | **digest** |
+| Codex notes | `~/.codex/memories/` | direct |
+| Codex session transcripts | `~/.codex/sessions/**/*.jsonl` | **digest** |
+| **AstrBot conversation memory** | `~/.astrbot/data/data_v4.db` (SQLite, tens of MB) | **digest** |
+| AstrBot session workspaces | `~/.astrbot/data/workspaces/` | direct |
+| Desktop text | `~/Desktop/*.md`, `*.txt` | direct |
+| Curated records | `<app>/通用资源/工作记录/<Agent>/` | direct |
+| **Anything you register** | see "let an agent report its own home" | direct or digest |
 
-- **Global search**: type once and the app searches **all four columns at the same time**
-  (agents / skills / MCP / work records), grouping hits by column and labelling their source;
-- **Full-text search over work records**: reads every agent's records character by character and
-  reports **which agent · which file · which line · surrounding context**; click a hit to open it.
+Three tiers:
 
-### Main projects: track what you are actually building
+- **direct** — search / workbench / MCP read them in place: nothing is copied, nothing goes stale,
+  new content is searchable immediately;
+- **digest** — too big or not meant for humans (10+ MB jsonl, SQLite databases) are summarised into
+  readable text under `%LOCALAPPDATA%\Agent资产总览\digest缓存\` (**rebuildable at any time,
+  never the only copy**);
+- **register only** — private binary formats (e.g. Cursor's workspaceStorage) are located, not read.
 
-- Define **as many as you like**, add or remove them at any time;
-- When you create one, the app **automatically searches every agent's logs** and gathers the
-  scattered records in one place — because a real project is usually built by several agents
-  handing off to each other;
-- Open a project card to see **implemented features**, the **dev log in reverse chronological
-  order with full artifact paths**, and which agents took part.
+> **Why transcription is gone**: copying required getting every source path right, and
+> **one missed source meant records that could never be found** (we hit that four times).
+> In-place indexing cannot "miss" a source, and stores no second copy.
 
-### UI and interaction
+### Let an agent report its own home
 
-- **Hover descriptions** on buttons (attached per widget class, so **buttons added later get one
-  automatically**);
-- **Keyboard shortcuts**: `Ctrl+F` focus search ｜ `F5` rescan ｜ `Ctrl+1..4` switch column ｜
-  `Ctrl+L` manual transcription ｜ `Ctrl+P` project settings ｜ `Esc` clear search;
-- Empty columns hide themselves, tab included; anything not found is simply not shown;
-- The visual design follows a restrained "warm monochrome, hairline borders, near-black text,
-  one solid accent" rule — colour is reserved for meaning.
+No need to guess where each client keeps things — **ask it**:
 
-## MCP server: let other agents look up this machine
+1. Open an agent's **workbench** → click **【检索地址】** → "复制自报家门问话";
+2. Paste that prompt into the agent's chat; it reports its own memory/record folders
+   (absolute paths, file counts, sizes, text or binary);
+3. Back in the app, click **【＋ 添加地址】**, pick the folder and confirm
+   (the app probes the size and suggests direct-read vs. digest).
 
-The app doubles as **an MCP server** (stdio, no third-party dependencies, protocol
-implemented by hand). The same exe runs as the server with `--mcp`; double-click it
-without arguments for the GUI.
+Registered locations become searchable **immediately**.
 
-Eight tools — all scanning **locally**, with only the matching snippets entering the
-model context (token-friendly):
+## Let agents query it: **MCP server + "search every turn"**
+
+### Eight tools (all scanning locally; only matching snippets enter the context)
 
 | Tool | What it does |
 |---|---|
-| `inventory_index` | A one-page index (~266 tokens): record sources with file counts / latest dates, plus the main-project list |
+| `inventory_index` | **A one-page index** (~266 tokens): record sources with file counts / latest dates, plus main projects |
 | `inventory_overview` | Machine overview: column counts, main projects, who worked in the last 7 days |
-| `inventory_search` | Full-text search across all columns and **every agent's work records** (returns file, line, context) |
+| `inventory_search` | Full-text search across all columns and **every agent's work records** (file, line, context) |
 | `inventory_project` | One project in full: implemented features / dev log / full artifact paths |
 | `inventory_agents` | Agent roster (executable, record folder, blurb) |
 | `inventory_recent` | What each agent did in the last N days |
 | `inventory_skills` | Skill library search |
 | `inventory_reindex` | Re-scan the machine (optionally rebuild the digest cache) |
 
-### Let an agent report its own home
+### Why it is cheap
 
-No need to guess where each client keeps its data — **ask it**:
+**The full scan runs in a local process; only the matching snippet enters the model context.**
+A typical search returns a few hundred characters from a corpus of tens of megabytes — so the
+token cost does **not** grow with the library.
 
-1. Open an agent's **workbench** → click **【检索地址】** → "复制自报家门问话"
-2. Paste that prompt into the agent's chat; it reports its own memory/record folders
-   (absolute paths, file counts, sizes, text or binary)
-3. Back in the app, click **【＋ 添加地址】**, pick the folder and confirm
-   (the app probes the size and suggests direct-read vs. digest)
+### "Search before answering, every turn"
 
-The rule written into the personas is **"search before answering, every turn"** —
-you never have to say "do you remember...".
+Having the tools is not enough — agents must actually use them, so a rule is written into each
+client's always-read place:
 
-### Records are read in place
+> **Every turn, before answering, search first** — don't wait for the user to say "do you remember...".
+> Start with `inventory_index()`, then `inventory_search(...)` with the keywords; only read further on a hit.
 
-Each agent's records are read **where they live** (no copies): WorkBuddy's memory and
-session archives, Codex notes and transcripts, AstrBot's conversation memory and
-workspaces, text files on the Desktop. Oversized raw transcripts (a 10+ MB jsonl) are
-**digested into readable text** in a cache that can be rebuilt at any time.
+Written automatically into: **AstrBot** (persona, stored in SQLite), **WorkBuddy**
+(`SOUL.md` / `MEMORY.md` / `AGENTS.md`), **Codex** (`AGENTS.md`). Clients that read no such file
+(Claude Desktop / Cursor / ComfyUI) get the text via "复制指针原文" to paste into their settings.
 
-## Quick start
+## Every agent gets a workbench
 
-Windows, Python 3.9 or newer. The UI uses only the standard library (`tkinter`) — **no third-party dependencies**.
+- **Workbench**: blurb on top, the agent's record list below;
+- **Search paths (【检索地址】)**: let it report its own home, paste the folders in (see above);
+- **Record sources (【记录来源】)**: one page showing where every record lives (built-in + yours),
+  plus cleanup of leftover duplicate copies;
+- **Attach agents (【接入 Agent】)**: registers the MCP server and drops the
+  "search every turn" pointer; includes a **self-check prompt** and a
+  "copy the read guide (MCP-free)" button;
+- **Editable blurb**: stored in `agent_intros.json`, kept across re-scans.
 
-Using [uv](https://docs.astral.sh/uv/) is recommended:
+## UI and interaction
+
+- **Hover help** on buttons (attached per widget class, so **buttons added later get one automatically**);
+- **Shortcuts**: `Ctrl+F` search ｜ `F5` / `Ctrl+L` rescan ｜ `Ctrl+1..4` switch column ｜
+  `Ctrl+P` project settings ｜ `Esc` clear search;
+- Empty columns hide themselves, tab included; anything not found is simply not shown;
+- Restrained palette: warm white, hairline borders (`#eaeaea`), near-black text (`#111111`) —
+  colour is reserved for meaning.
+
+## Quick start (from source)
+
+Windows, Python 3.9+, **no third-party dependencies**. [uv](https://docs.astral.sh/uv/) recommended:
 
 ```bash
 winget install --id=astral-sh.uv -e     # or: pip install uv
-
-git clone https://github.com/cduxiu349/agent-inventory.git
-cd Agent-asset-overview
+git clone https://github.com/YOZODO349/agent-inventory.git
+cd agent-inventory
 uv run python src/agent_inventory_app.py
 ```
 
-Or just use any Python:
+These files in `src/` **must stay together** (the program resolves them relative to itself):
 
-```bash
-python src/agent_inventory_app.py
+```
+agent_inventory_app.py   main program (GUI)
+glass_widget.py          the card widget
+scan_agents.py           collector: skills / MCP
+scan_agents_apps.py      collector: agent clients / record-root registry / in-place index
+agent_mcp.py             MCP server (stdio, implemented with the standard library only)
+agent_onboard.py         attach MCP + write persona pointers + the self-report skill
 ```
 
-On first launch it scans the machine in the background and writes two inventory files
-(`agents.json`, `agent_inventory.json`) into `src/`. They are **not** tracked by git.
+### Registering the MCP server
 
-To re-collect without opening the UI:
+The server command is that one exe (or python when running from source):
 
-```bash
-uv run python scan_agents.py            # from src/, or double-click scripts/rescan.bat
+```jsonc
+// e.g. ~/.workbuddy/mcp.json, ~/.cursor/mcp.json, Claude Desktop config
+{"mcpServers": {"agent-inventory": {"command": "D:\\path\\AgentAssetOverview.exe",
+                                   "args": ["--mcp"]}}}
 ```
+
+> **AstrBot is special**: it keeps an allow-list of stdio launchers (`python`, `node`, ...),
+> so use `"command": "<python.exe>", "args": ["<app>\\agent_mcp.py"]`
+> (see its `core/agent/mcp_client.py`).
+>
+> The GUI's **接入 Agent** does all of the above for you (every file it touches is backed up first,
+> and the change list is shown in the window).
 
 ## Build a single-file exe
 
@@ -153,63 +187,49 @@ uv run python scan_agents.py            # from src/, or double-click scripts/res
 uv run pyinstaller --noconfirm scripts/build_exe.spec
 ```
 
-The result is `dist/AgentAssetOverview.exe`.
+Result: `dist/AgentAssetOverview.exe`.
 
-## Project layout
+- The spec uses `console=True` because **the MCP stdio channel is unreliable in windowed mode**
+  (PyInstaller treats `sys.stdout` as unusable there);
+- the GUI hides that console window on startup (`_hide_console()`), so it looks unchanged.
 
-```
-src/
-  agent_inventory_app.py   # main program: tkinter UI + all interaction logic
-  glass_widget.py          # the card widget (pure tkinter, hand-drawn)
-  scan_agents.py           # collector: skills / MCP / inventory
-  scan_agents_apps.py      # collector: agent clients / auto-transcription / task list
-scripts/
-  build_exe.spec           # PyInstaller spec
-  rescan.bat               # double-click rescan
-pyproject.toml             # project metadata and uv config
-```
+## Directory layout (after running)
 
-Once running, the app grows these folders **next to itself** (local data, never committed):
+The app grows these **next to itself** (local data, never committed):
 
 ```
-通用资源\skills\                   the skill library itself (other agents' shelves hold links)
-通用资源\工作记录\<Agent>\          that agent's work records
-通用资源\安卓模拟器MCP\              self-contained Android toolchain, if you deployed one
-主要项目.json                       the projects you track
-agent_intros.json                  the blurbs you wrote
+通用资源\\skills\\                the skill library (other shelves hold links to it)
+通用资源\\工作记录\\<Agent>\\      curated records per agent (one of the indexed roots)
+通用资源\\安卓模拟器MCP\\           self-contained Android toolchain, if you deployed one
+主要项目.json                        the projects you track
+agent_intros.json                   the blurbs you wrote
+MCP设置.json                        masking / auto-attach switches
 ```
 
-> Folder names stay in Chinese on disk — only the app's own labels are translated here.
+Two more live in your user profile:
 
-> The four `.py` files must stay in the same directory: the program resolves collectors and
-> data files relative to its own location.
+```
+%LOCALAPPDATA%\\Agent资产总览\\digest缓存\\    digests of oversized sources (rebuildable)
+%LOCALAPPDATA%\\Agent资产总览\\检索地址.json     the search paths you registered
+```
 
 ## Extending it
 
-Everything lives in `src/scan_agents_apps.py` — copy the existing shapes:
+Edit `src/scan_agents_apps.py`; copy the existing shapes:
 
 | Constant | Purpose |
 |---|---|
-| `KNOWN` | Registry of known agent clients. Use `@HOME@` as a placeholder for the home directory; `hidden: True` keeps an entry off the list. |
-| `SIGNATURES` | "Real body" file names per client — used to find an install whose registered path no longer matches. |
-| `LOG_SOURCES` | **Log sources for auto-transcription**: where each agent keeps its logs (whole-file copy or summarised). |
-| `DOC_DIRS` | Directories of Markdown docs to include in the inventory. |
-
-## Where the data comes from
-
-- Skills: `~/agent-skills` (a link) plus the usual shelves `~/.claude` `~/.cursor` `~/.trae` `~/.agent` `~/.agents`
-- MCP: `~/.workbuddy/mcp.json`, `~/.cursor/mcp.json`, Claude Desktop config, `~/.codex/config.toml`
-- **Work logs**: WorkBuddy session memory, Codex session transcripts and notes, AstrBot session workspaces (see `LOG_SOURCES`)
-- Agents: built-in registry + desktop / Start-menu shortcuts + an on-demand full-disk search (installers and uninstallers are skipped)
+| `KNOWN` | Registry of known agent clients (`@HOME@` placeholder; `hidden: True` keeps an entry off the list) |
+| `SIGNATURES` | Per-client "real body" file names, used when a registered path no longer matches |
+| `RECORD_ROOTS` | **The record-root registry**: where each agent's records live and how to handle them (direct / digest / register-only) |
+| `LOG_SOURCES` | The old transcription sources (superseded by `RECORD_ROOTS`, kept for reference) |
 
 ## About the inventory files
 
-`src/agents.json` and `src/agent_inventory.json` are **runtime artifacts** collected from
-your own machine: they contain your user-name paths and the skills you have installed. They are
-listed in `.gitignore` — **please do not commit them**; that would publish your machine's inventory.
-
-Every launch checks the origin stamp on those files: if they came from another computer,
-they are discarded and re-scanned.
+`src/agents.json` and `src/agent_inventory.json` are **runtime artifacts** collected from your own
+machine: they contain your user-name paths and installed skills. They are listed in `.gitignore` —
+**please do not commit them**. Every launch checks their origin stamp and re-scans when they came
+from another computer.
 
 ## License
 
