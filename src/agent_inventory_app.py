@@ -1328,6 +1328,145 @@ class App(tk.Tk):
         do_attach()
         dlg.bind("<Escape>", lambda _e: (save_switches(), dlg.destroy()))
 
+    def mcp_status_dialog(self, agent=None):
+        """「MCP 状态」：这一家的 MCP 配置在哪、注册了没、要不要受信。
+
+        点卡片上的 MCP 灯进来的 —— 暗灯/半灯要能变成**可操作项**，
+        否则用户只知道"没亮"，不知道下一步做什么。
+        """
+        import json as _json
+        name = (agent or {}).get("name") or ""
+        key = ((agent or {}).get("key") or name).strip().lower()
+        exe = self._self_exe()
+        cfg = {
+            "workbuddy": (os.path.join(os.path.expanduser("~"), ".workbuddy", "mcp.json"), "json"),
+            "cursor": (os.path.join(os.path.expanduser("~"), ".cursor", "mcp.json"), "json"),
+            "claude": (os.path.join(os.environ.get("APPDATA", ""), "Claude",
+                                    "claude_desktop_config.json"), "json"),
+            "astrbot": (os.path.join(os.path.expanduser("~"), ".astrbot", "data",
+                                     "mcp_server.json"), "json"),
+            "codexplus": (os.path.join(os.path.expanduser("~"), ".codex",
+                                       "config.toml"), "toml"),
+            "codex": (os.path.join(os.path.expanduser("~"), ".codex", "config.toml"), "toml"),
+        }.get(key)
+        dlg = tk.Toplevel(self)
+        dlg.title("MCP 状态 · %s" % name)
+        dlg.configure(bg=BG)
+        dlg.transient(self)
+        w, h = self._fit(_px(820), _px(560))
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry("%dx%d+%d+%d" % (w, h, (sw - w) // 2, (sh - h) // 2))
+        pad = ttk.Frame(dlg, padding=(20, 16))
+        pad.pack(fill="both", expand=True)
+        ttk.Label(pad, text="MCP 状态 · %s" % name, style="TLabel",
+                  font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
+        it = (agent or {}).get("integration") or {}
+        st_txt = ("已注册" + ("（且受信）" if it.get("mcp_trusted", True) else "（**未受信**）"))
+        if not it.get("mcp"):
+            st_txt = "未注册"
+        ttk.Label(pad, text="现状：%s" % st_txt, style="Dim.TLabel",
+                  font=("Microsoft YaHei UI", 11)).pack(anchor="w", pady=(6, 0))
+        foot = ttk.Frame(pad)
+        foot.pack(side="bottom", fill="x", pady=(12, 0))
+        body = tk.Frame(pad, bg=BG)
+        body.pack(fill="both", expand=True, pady=(8, 0))
+        txt = tk.Text(body, wrap="word", bg="#ffffff", fg=FG, relief="flat", bd=0,
+                      highlightthickness=1, highlightbackground=LINE,
+                      font=("Microsoft YaHei UI", 9), padx=12, pady=10)
+        sb = ttk.Scrollbar(body, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        txt.pack(side="left", fill="both", expand=True)
+
+        if not cfg:
+            snippet = ("这家没有已知的 MCP 配置位置（可能是自定义客户端）。\n"
+                       "可在它的设置里找「MCP / 连接器」，按下面的片段登记：")
+            snippet_body = _json.dumps(
+                {"mcpServers": {"agent-inventory": {"command": exe, "args": ["--mcp"]}}},
+                ensure_ascii=False, indent=1)
+            fp = ""
+        else:
+            fp, kind = cfg
+            if key == "astrbot":
+                py = os.path.join(os.environ.get("LOCALAPPDATA", ""), "AstrBot",
+                                  "backend", "python", "python.exe")
+                snippet = ("⚠️ **AstrBot 有启动命令白名单**（只认 python/node 之类，见它的 "
+                           "`core/agent/mcp_client.py`）—— 不能直接指 exe，要这样写：")
+                snippet_body = _json.dumps(
+                    {"mcpServers": {"agent-inventory": {
+                        "command": py,
+                        "args": [os.path.join(HERE, "agent_mcp.py")]}}},
+                    ensure_ascii=False, indent=1)
+            elif kind == "toml":
+                snippet = "Codex 用 TOML，追加这一段："
+                snippet_body = ("[mcp_servers.agent-inventory]\ncommand = '%s'\n"
+                                "args = [\"--mcp\"]" % exe)
+            else:
+                snippet = "把这个键加进它的 `mcpServers`："
+                snippet_body = _json.dumps(
+                    {"agent-inventory": {"command": exe, "args": ["--mcp"]}},
+                    ensure_ascii=False, indent=1)
+        lines = [u"配置文件：", u"  %s" % (fp or "（未知）"),
+                 u"  在不在：%s" % (u"在 ✓" if fp and os.path.isfile(fp) else u"不在 ✗"),
+                 u"", u"%s" % snippet, u"", snippet_body, u""]
+        for nt in (it.get("notes") or []):
+            lines.append(u"· " + str(nt))
+        if key == "workbuddy":
+            lines += [u"", u"WorkBuddy 的 MCP 有**哈希信任清单**（见它日志里的 "
+                          u"[MCP Security] skipping untrusted server）——",
+                      u"注册了也会被跳过。要它真正用起来，得在它的**连接器 / MCP 设置**里"
+                      u"把这个服务受信/启用。",
+                      u"（另一条路：不依赖 MCP —— 用「接入 Agent」把读取指引写进它人格，"
+                      u"见卡片上的「人格」灯。）"]
+        txt.insert("1.0", u"\n".join(lines))
+        txt.configure(state="disabled")
+
+        def open_dir():
+            if fp:
+                self.open_path(os.path.dirname(fp))
+            else:
+                self.status.configure(text=u"这家没有已知的配置位置。")
+        ttk.Button(foot, text=u"打开配置所在目录", style="Tab.TButton",
+                   command=open_dir).pack(side="left")
+        ttk.Button(foot, text=u"复制登记片段", style="Act.TButton",
+                   command=lambda: (self.clipboard_clear(),
+                                    self.clipboard_append(snippet_body),
+                                    self.status.configure(
+                                        text=u"登记片段已复制 —— 粘进它的 MCP 配置即可。"))
+                   ).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text=u"去接入 Agent", style="Tab.TButton",
+                   command=lambda: (dlg.destroy(), self.onboard_dialog())
+                   ).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text=u"关闭", style="Tab.TButton",
+                   command=dlg.destroy).pack(side="right")
+
+    def _integration_line(self, agent):
+        """工作台右上角那句：这家 Agent 与应用的**接入程度**（四盏灯 + 备注）。
+
+        第四十六轮（爱卿之令）：卡片上打灯，点进来这里给细账。
+        """
+        it = (agent or {}).get("integration") or {}
+        if not it:
+            return u"记录就地读取：本格的原始记录，应用直接就地读，不必搬运。"
+        mcp_on = bool(it.get("mcp"))
+        mcp_full = mcp_on and bool(it.get("mcp_trusted", True))
+
+        def lamp(on, half=False):
+            return u"●" if on else (u"◐" if half else u"○")
+        # 只报"结果性"的三件（记录的产出 / 人格指针到位 / MCP 可用）；
+        # 「登记过检索地址」是手段，不单列 —— 它体现在记录灯里（第四十八轮）
+        parts = [u"接入程度（与应用数据）",
+                 u"记录 %s ｜ 人格 %s ｜ MCP %s"
+                 % (lamp(bool(it.get("records"))),
+                    lamp(bool(it.get("persona"))),
+                    lamp(mcp_full, mcp_on and not mcp_full))]
+        if it.get("records"):
+            parts[-1] += u"（%d 份）" % it.get("records")
+        notes = it.get("notes") or []
+        if notes:
+            parts.append(u"· " + u"\n· ".join(notes[:3]))
+        return u"\n".join(parts)
+
     # ---------- 检索地址（用户手工登记，让 Agent 自报家门） ----------
     def record_paths_dialog(self, agent=None):
         """某个 Agent 的【检索地址】：把 Agent 自报的目录粘进来，即纳入主动检索。"""
@@ -3669,7 +3808,52 @@ class App(tk.Tk):
         # 名下挂着工作区散件者，在标题右上角缀一枚小徽标，提示「点开有东西看」
         n_works = len((r.get("agent") or {}).get("works") or []) \
             if is_agents else 0
-        if n_works:
+        # 第四十六轮（爱卿之令）：按「接进应用数据的程度」在卡片上打四盏灯 ——
+        #   记录 / 人格（每轮先查的指针）/ MCP（注册且受信）/ 地址（登记的检索地址）
+        #   ● 亮 ｜ ◐ 半（注册了但客户端受信门槛拦着）｜ ○ 暗
+        if is_agents:
+            it = (r.get("agent") or {}).get("integration") or {}
+            if it:
+                row = tk.Frame(glass, bg=CARD)
+                _mcp_on = bool(it.get("mcp"))
+                _mcp_full = _mcp_on and bool(it.get("mcp_trusted", True))
+                # 灯可点（第四十七轮）：每盏灯连到该管的那个窗 ——
+                #   记录 → 记录来源 ｜ 人格 → 接入 Agent ｜ MCP → MCP 状态
+                #   （第四十八轮去掉了「地址」灯：那是手段，不是结果）
+                _ag = r.get("agent") or {}
+                _acts = {
+                    u"记录": lambda a=_ag: self.record_sources_dialog(),
+                    u"人格": lambda a=_ag: self.onboard_dialog(),
+                    "MCP": lambda a=_ag: self.mcp_status_dialog(a),
+                }
+                _tips = {
+                    u"记录": u"点开「记录来源」：本机的记录都长在哪、可清理重复副本",
+                    u"人格": u"点开「接入 Agent」：接 MCP、放「每轮先查再答」指针、取自检提示词",
+                    "MCP": u"点开「MCP 状态」：它的 MCP 配置在哪、注册了没、要不要在客户端里受信",
+                }
+                # 第四十八轮（爱卿令）：去掉「地址」那盏灯 —— 自报家门只是让
+                #   「记录」灯亮起来的**手段之一**，本身不是结果；登记的地址本就
+                #   算在记录根里，记录灯亮就说明含它在内。手段不该占一格。
+                for nm, on, half in (
+                        (u"记录", bool(it.get("records")), False),
+                        (u"人格", bool(it.get("persona")), False),
+                        ("MCP", _mcp_full, _mcp_on and not _mcp_full)):
+                    glyph = u"●" if on else (u"◐" if half else u"○")
+                    lb = tk.Label(row, text=u"%s %s" % (glyph, nm),
+                                  bg=SOFT if on else CARD,
+                                  fg=accent if on else FAINT,
+                                  font=F_TAG, padx=_px(4), pady=_px(1),
+                                  cursor="hand2")
+                    lb.pack(side="left", padx=(0, _px(3)))
+                    lb.bind("<Button-1>",
+                            lambda _e, f=_acts[nm]: (f(), "break")[1])
+                    self._tip(lb, _tips[nm])
+                glass.add_content(row, glass._cw - _px(16), _px(12), anchor="ne")
+                if n_works:
+                    b2 = tk.Label(glass, text=u" 工作 %d 件 " % n_works,
+                                  bg=SOFT, fg=accent, font=F_TAG)
+                    glass.add_content(b2, glass._cw - _px(18), _px(40), anchor="ne")
+        elif n_works:
             badge = tk.Label(glass, text=" 工作 %d 件 " % n_works,
                              bg=SOFT, fg=accent, font=F_TAG)
             glass.add_content(badge, glass._cw - _px(20), _px(14), anchor="ne")
@@ -4254,8 +4438,7 @@ class App(tk.Tk):
                  font=F_TAG).pack(side="left", padx=(10, 0))
         # 右上角：说明这一页的记录是怎么来的（爱卿指定的位置）
         tk.Label(head,
-                 text="记录就地读取：本格是这个 Agent 的记录夹（整理稿放这儿）；\n"
-                      "它各处的原始记录，应用也直接就地读，不必搬运。",
+                 text=self._integration_line(agent),
                  bg=BG, fg=FAINT, font=F_HINT, justify="right"
                  ).pack(side="right")
 

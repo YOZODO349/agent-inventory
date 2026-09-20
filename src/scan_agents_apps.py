@@ -1370,6 +1370,122 @@ def discover_agents(known=None, limit=30):
     return list(found.values())
 
 
+# ---------- 接入程度：给卡片打灯（第四十六轮） ----------
+# 爱卿之令：按每家「接进应用数据的程度」在卡片上打标签 ——
+#   WorkBuddy 有人格指针但 MCP 受信任门槛拦着 → 人格灯亮、MCP 灯暗。
+# 四盏灯：
+#   records  找得到它的记录（就地索引里有货）
+#   persona  它的「每次必读」处已写入「每轮先查」指针
+#   mcp      agent-inventory 已注册进它的 MCP 配置
+#   paths    用户为它登记过【检索地址】
+PERSONA_MARKS = ("agent-inventory", u"本机 Agent 资产索引", u"先查后答")
+MCP_SERVER_KEY = "agent-inventory"
+# 已知的「每次必读」文件（指针写这儿）
+PERSONA_TARGETS = {
+    "workbuddy": ["~/.workbuddy/SOUL.md", "~/.workbuddy/MEMORY.md", "~/.workbuddy/AGENTS.md"],
+    "codexplus": ["~/.codex/AGENTS.md"],
+    "codex": ["~/.codex/AGENTS.md"],
+    "cursor": ["~/.cursor/rules/agent-inventory.mdc", "~/.cursor/AGENTS.md"],
+    "astrbot": [],            # 人格在 SQLite 里，另查
+    "grokbot": [],
+}
+
+
+def _expand_tilde(p2):
+    return os.path.expanduser(p2) if p2.startswith("~") else p2
+
+
+def _file_has_mark(fp):
+    try:
+        t = io.open(fp, encoding="utf-8", errors="ignore").read()
+    except Exception:
+        return False
+    return any(m in t for m in PERSONA_MARKS)
+
+
+def _astrbot_persona_has_mark():
+    """AstrBot 的人格在 data_v4.db，查它有没有指针。"""
+    import sqlite3
+    db = os.path.join(HOME, ".astrbot", "data", "data_v4.db")
+    if not os.path.isfile(db):
+        return False
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % db.replace("\\", "/"), uri=True,
+                              timeout=10)
+        rows = con.execute("SELECT system_prompt FROM personas").fetchall()
+        con.close()
+    except Exception:
+        return False
+    return any(any(m in (r[0] or "") for m in PERSONA_MARKS) for r in rows)
+
+
+def _mcp_registered(agent):
+    """该客户端自己的 MCP 配置里有没有 agent-inventory。"""
+    key = agent_key_of(agent)
+    paths = {
+        "workbuddy": os.path.join(HOME, ".workbuddy", "mcp.json"),
+        "cursor": os.path.join(HOME, ".cursor", "mcp.json"),
+        "astrbot": os.path.join(HOME, ".astrbot", "data", "mcp_server.json"),
+        "codexplus": os.path.join(HOME, ".codex", "config.toml"),
+        "codex": os.path.join(HOME, ".codex", "config.toml"),
+    }
+    fp = paths.get(key)
+    if not fp or not os.path.isfile(fp):
+        return False, ""
+    try:
+        t = io.open(fp, encoding="utf-8", errors="ignore").read()
+    except Exception:
+        return False, ""
+    if MCP_SERVER_KEY not in t:
+        return False, ""
+    return True, fp
+
+
+def integration_of(agent, extra_roots=None, record_count=0):
+    """算一个 Agent 的接入程度（四盏灯 + 备注）。"""
+    key = agent_key_of(agent)
+    out = {"records": int(record_count or 0), "persona": False, "mcp": False,
+           "paths": False, "notes": []}
+    # 人格指针
+    if key == "astrbot":
+        out["persona"] = _astrbot_persona_has_mark()
+        if not out["persona"]:
+            out["notes"].append(u"人格（DB）里还没写指针")
+    else:
+        targets = PERSONA_TARGETS.get(key)
+        if targets is None:
+            cand = os.path.join(HOME, "." + key)
+            targets = [os.path.join(cand, "AGENTS.md")] if os.path.isdir(cand) else []
+        hit = [t for t in targets if _file_has_mark(_expand_tilde(t))]
+        out["persona"] = bool(hit)
+        if targets and not hit:
+            out["notes"].append(u"没找到可写的「必读」文件（或还没写）")
+        elif not targets and key not in ("astrbot",) and agent.get("exe"):
+            # 只对「真客户端」提示人工粘 —— 说明文档那类条目不必（它会污染备注）
+            out["notes"].append(u"这家不读文件，指针需在它设置里人工粘")
+        if hit:
+            out["persona_file"] = hit[0]
+    # MCP 注册
+    out["mcp"], mcp_fp = _mcp_registered(agent)
+    if out["mcp"]:
+        out["mcp_file"] = mcp_fp
+        if key == "workbuddy":
+            # 实测：WorkBuddy 有哈希信任清单，注册了也会被 skip（见其 MCP Security 日志）
+            out["mcp_trusted"] = False
+            out["notes"].append(u"MCP 已注册，但客户端有信任门槛（需在它界面里受信）")
+        else:
+            out["mcp_trusted"] = True
+    else:
+        out["notes"].append(u"MCP 未注册")
+    # 检索地址
+    try:
+        er = extra_roots if extra_roots is not None else load_extra_roots()
+        out["paths"] = bool((er or {}).get(key))
+    except Exception:
+        out["paths"] = False
+    return out
+
+
 def collect_tasks(agents):
     """把各 Agent 自动抄录下来的日志整理成「任务一览」。"""
     import time as _t
@@ -1800,6 +1916,17 @@ def collect():
         })
     # 出口统一还原占位符：`@HOME@` → 本机家目录，并盖一枚产地戳
     import time as _t            # 局部导入：动态载入时用的，顶上导入易被打包器漏掉
+    # 第四十六轮：给每个 Agent 算「接入程度」，供卡片打灯
+    try:
+        _er = load_extra_roots()
+        _rc = {}
+        for _n, _fp, _src in iter_record_files(agents):
+            _rc[_n] = _rc.get(_n, 0) + 1
+        for _a in agents:
+            _a["integration"] = integration_of(_a, _er, _rc.get(_a.get("name"), 0))
+    except Exception:
+        pass
+
     # 第四十五轮（爱卿问：不收录就识别不到？）—— 登记表认不出的，**按特征自动发现**。
     #   换机器、客户端改版、装了新东西时尤其要紧；发现的会带「自动发现」分类上架，
     #   人工确认后可以像别的 Agent 一样用。

@@ -42,7 +42,7 @@ So this tool does three things:
 
 | Column | What it shows |
 |---|---|
-| **Agents** | Installed agent clients (built-in registry + shortcuts + a last-resort disk search + **marker-based auto-discovery**). Each shows its record count; **click a card to open its workbench** |
+| **Agents** | Installed agent clients (built-in registry + shortcuts + a last-resort disk search + **marker-based auto-discovery**). Each card carries **three integration lights** (records / persona / MCP) and **the lights are clickable** — a dark light tells you what to fix. **Click the card for its workbench** |
 | **Skills** | User-level and project-level skills (reads `SKILL.md` frontmatter); same-family skills collapse into one **bundle card** |
 | **MCP servers** | Registrations from WorkBuddy / Cursor / Claude Desktop / AstrBot / Codex. **Only portable ones** — entries tied to a client's private runtime directory are filtered out |
 | **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page |
