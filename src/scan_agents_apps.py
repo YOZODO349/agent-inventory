@@ -1219,6 +1219,157 @@ def cleanup_transcribed(agents, archive=True):
             "live_count": len(live)}
 
 
+# ---------- 未收录 Agent 的自动发现（第四十五轮） ----------
+# 爱卿问："不收录就识别不到？" —— 是的，先前只认 KNOWN 登记表 +
+#   桌面/开始菜单快捷方式 + 按特征名全盘寻真身；表里没写的客户端当不存在。
+# 今补：按**特征**自动发现 —— 常见安装位置里，凡带 MCP 配置 / 技能目录 /
+#   AGENTS.md / 记忆目录 这类东西的目录，都算疑似 Agent 客户端。
+AGENT_MARKERS = {
+    "mcp.json": u"有 MCP 配置",
+    "mcp_server.json": u"有 MCP 注册表",
+    ".mcp.json": u"有 MCP 配置",
+    "skills": u"有技能目录",
+    "SKILL.md": u"有技能",
+    "AGENTS.md": u"有 AGENTS.md",
+    "CLAUDE.md": u"有 CLAUDE.md",
+    "GEMINI.md": u"有 GEMINI.md",
+    "memory": u"有记忆目录",
+    "memories": u"有记忆目录",
+    "plugins": u"有插件目录",
+    "extensions": u"有扩展目录",
+    "config.toml": u"有配置文件",
+}
+# 名字里带这些，才值得进一步看特征（免得把一堆软件都算进来）
+# 只列**具体**的客户端名。绝不写 "ai"/"llm"/"gpt" 这种 —— 子串匹配会把
+#   baidu、JetBrains、Windows Mail 全捞进来（第四十五轮的血泪）。
+AGENT_NAME_HINTS = (
+    "agent", "agents", "codex", "claude", "cursor", "windsurf", "trae", "kiro",
+    "cline", "roo", "gemini", "qwen", "kimi", "tongyi", "doubao", "aider",
+    "continue", "copilot", "devin", "workbuddy", "astrbot", "openclaw", "grok",
+    "openai", "anthropic", "deepseek", "zhipu", "moonshot", "ollama", "lmstudio",
+)
+DISCOVER_SKIP = {
+    "baidu", "kingsoft", "billfish", "jetbrains", "mail", "tools", "wps",
+    "microsoft", "windows", "google", "nvidia", "intel", "adobe", "python",
+    "node_modules", "npm", "pip", "nuget", "temp", "packages", "git", "7-zip",
+    "programs", "program files", "program files (x86)", "mozilla", "steam",
+    "agent资产总览", "agent-asset-overview", "_public_export", "backups",
+}
+
+
+def _discover_roots():
+    la = os.environ.get("LOCALAPPDATA", "")
+    ap = os.environ.get("APPDATA", "")
+    out = [(HOME, 1), (la, 1), (os.path.join(la, "Programs") if la else "", 1),
+           (ap, 1), ("C:\\Program Files", 1), ("C:\\Program Files (x86)", 1)]
+    return [(r, d) for r, d in out if r and os.path.isdir(r)]
+
+
+# 强特征：agent 客户端**专属**的形状，别的软件不会有
+AGENT_STRONG = ("mcp.json", "mcp_server.json", ".mcp.json", "skills", "skill.md",
+                "agents.md", "claude.md", "gemini.md", "memories")
+# 弱特征：太常见（金山、Billfish 都有 plugins），只能当辅证
+AGENT_WEAK = ("memory", "plugins", "extensions", "config.toml")
+
+
+def _name_tokens(name):
+    """把名字切成词。防止 "baidu" 命中 "ai"、"JetBrains" 命中 "ai" 这类子串误伤。"""
+    import re as _re
+    spaced = _re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(name))
+    return {t for t in _re.split(r"[^A-Za-z0-9]+", spaced.lower()) if t}
+
+
+def _looks_like_agent(dirpath, name):
+    """返回 (是否疑似, 证据列表, 疑似可执行文件)。"""
+    ev = []
+    low = name.lower()
+    toks = _name_tokens(name)
+    hinted = bool(toks & set(AGENT_NAME_HINTS))
+    try:
+        entries = os.listdir(dirpath)
+    except Exception:
+        return False, [], ""
+    lowmap = {e.lower(): e for e in entries}
+    strong = [m for m in AGENT_STRONG if m in lowmap]
+    weak = [m for m in AGENT_WEAK if m in lowmap]
+    for mk in strong + weak:
+        why = AGENT_MARKERS.get(mk) or AGENT_MARKERS.get(mk.upper())
+        if why:
+            ev.append(why)
+    # 有几个文件就把分数凑够了 —— 关键是「有 agent 的配置形状」
+    exe = ""
+    for depth_dir, dns, fns in os.walk(dirpath):
+        if depth_dir[len(dirpath):].count(os.sep) > 2:
+            dns[:] = []
+            continue
+        for f in fns:
+            if f.lower().endswith(".exe") and not any(
+                    t in f.lower() for t in ("unins", "setup", "update", "crash")):
+                cand = os.path.join(depth_dir, f)
+                if not exe or os.path.getsize(cand) > os.path.getsize(exe):
+                    exe = cand
+        if exe and depth_dir != dirpath:
+            break
+    # 判定：**有专属特征**就算；只靠名字的话，必须名字按词命中 + 有可执行文件
+    ok = bool(strong) or (hinted and bool(exe))
+    return ok, ev, exe
+
+
+def discover_agents(known=None, limit=30):
+    """找本机**未收录**的疑似 Agent 客户端。
+
+    与 KNOWN 登记表互补：表里写死的认不出来时（换机器、客户端改版、装了新东西），
+    靠特征也能把它们挖出来，交给界面显示或人工确认。
+    """
+    known = known or []
+    kny = set()
+    for a in known:
+        for key in ("name", "key", "exe", "works_dir"):
+            v = (a.get(key) or "").strip().lower()
+            if v:
+                kny.add(v.replace("/", "\\"))
+    found = {}
+    for root, depth in _discover_roots():
+        try:
+            names = os.listdir(root)
+        except Exception:
+            continue
+        for nm in names:
+            full = os.path.join(root, nm)
+            if not os.path.isdir(full) or nm.lower() in DISCOVER_SKIP:
+                continue
+            try:
+                if os.path.islink(full):
+                    continue
+            except Exception:
+                pass
+            low = nm.lower().lstrip(".")
+            # 按**词**比对 skip 表：`agent-tools` 这类要被 "tools" 拦住，
+            # 但 `agent` 本身不能被误伤（故不能只做子串比较）
+            _toks = _name_tokens(nm)
+            if not low or low in DISCOVER_SKIP or (_toks & DISCOVER_SKIP):
+                continue
+            if any(low in k or k in low for k in kny if k):
+                continue
+            ok, ev, exe = _looks_like_agent(full, nm)
+            if not ok:
+                continue
+            if exe and exe.lower() in kny:
+                continue
+            key = nm.lstrip(".").lower()
+            if key in found:
+                continue
+            found[key] = {"key": key, "name": nm.lstrip("."), "kind": "agent",
+                          "category": u"自动发现", "exe": exe or "",
+                          "works_dir": full, "source": u"自动发现（未收录）",
+                          "verified": False, "exists": True, "discovered": True,
+                          "desc": u"未在登记表里，但具备 Agent 客户端的特征："
+                                  + u"、".join(ev or [u"名字与结构像"])}
+            if len(found) >= limit:
+                return list(found.values())
+    return list(found.values())
+
+
 def collect_tasks(agents):
     """把各 Agent 自动抄录下来的日志整理成「任务一览」。"""
     import time as _t
@@ -1649,6 +1800,16 @@ def collect():
         })
     # 出口统一还原占位符：`@HOME@` → 本机家目录，并盖一枚产地戳
     import time as _t            # 局部导入：动态载入时用的，顶上导入易被打包器漏掉
+    # 第四十五轮（爱卿问：不收录就识别不到？）—— 登记表认不出的，**按特征自动发现**。
+    #   换机器、客户端改版、装了新东西时尤其要紧；发现的会带「自动发现」分类上架，
+    #   人工确认后可以像别的 Agent 一样用。
+    try:
+        for _d in discover_agents(agents):
+            if not any((a.get("name") or "") == _d["name"] for a in agents):
+                agents.append(_d)
+    except Exception as _e:
+        pass
+
     # 工作任务及产物一览：原料就是上面自动抄录下来的那堆日志
     tasks = collect_tasks(agents)
 
