@@ -191,7 +191,7 @@ def name_date(path):
 
 
 def title_date(title):
-    """任务标题里常自带日期（`2026-09-12｜樱境物语自动化…`），优先取它。"""
+    """任务标题里常自带日期（`2026-09-12｜某个项目…`），优先取它。"""
     m = re.search(r"(20\d\d-\d\d-\d\d)", str(title or ""))
     return m.group(1) if m else ""
 
@@ -410,6 +410,7 @@ def tool_project(name=""):
                % (len(hit_tasks), len(recs), time.strftime("%Y-%m-%d %H:%M")))
     # 已实现的功能
     feats = pr.get("features") if isinstance(pr.get("features"), list) else None
+    _manual_feats = bool(feats)
     if not feats:
         feats, seen = [], set()
         for a, fp, t, _i in recs:
@@ -446,23 +447,25 @@ def tool_project(name=""):
                     continue
                 seen.add(item)
                 feats.append(item)
-                if len(feats) >= 20:
+                if len(feats) >= 8:
                     break
-            if len(feats) >= 20:
+            if len(feats) >= 8:
                 break
-        feats = [f for f in feats if not re.match(r"^[-\s]*$", f)][:20]
-    out += [u"", u"## 已实现的功能（%d 条）" % len(feats)]
+        feats = [f for f in feats if not re.match(r"^[-\s]*$", f)][:8]
+    # 第六十一轮（爱卿令）：项目全貌瘦身 —— 人工清单标明来路，自动摘录只当线索
+    out += [u"", u"## 已实现的功能（%d 条，%s）"
+            % (len(feats), u"我划的重点" if _manual_feats else u"自动摘录，供定位")]
     out += ([u"- " + f for f in feats] or [u"（日志里没摘出功能条目）"])
     # 开发日志
-    out += [u"", u"## 开发日志（按时间倒序，前 15 条）"]
-    for a, fp, t, i in sorted(recs, key=lambda x: stamp(x[1]), reverse=True)[:15]:
+    out += [u"", u"## 开发日志（按时间倒序，前 8 条）"]
+    for a, fp, t, i in sorted(recs, key=lambda x: stamp(x[1]), reverse=True)[:8]:
         out.append(u"- **%s** ｜ [%s] `%s`" % (stamp(fp), a.get("name"), fp))
         out.append(_hit_block(fp, t, i))
     if hit_tasks:
-        out += [u"", u"## 相关任务条目（名册任务表，前 10 条）"]
+        out += [u"", u"## 相关任务条目（名册任务表，前 5 条）"]
         for t in sorted(hit_tasks,
                         key=lambda x: (title_date(x.get("title")) or "", x.get("mtime", 0)),
-                        reverse=True)[:10]:
+                        reverse=True)[:5]:
             out.append(u"- %s ｜ %s" % (title_date(t.get("title")) or t.get("when"),
                                       (t.get("title") or "")[:70]))
             for art in (t.get("artifacts") or [])[:3]:

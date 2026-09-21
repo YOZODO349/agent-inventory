@@ -266,15 +266,46 @@ AGENT_COLORS = {
 # ---------- 配色（明亮白底 · 冰柜） ----------
 # 配色：照「Premium Utilitarian Minimalism」那套来 ——
 # 暖白底、近黑字、超淡边；**颜色是稀缺资源**，只用于语义与细微点缀。
+#
+# 2026-09-20（UI 美化）：把配色收成**三层**，免得「暖灰、冷灰混着用」
+# （照 redesign-skill 审：灰必须同族，暖就一路暖到底）
+#   第一层 · 中性面：底色、卡片、浅底、描边、四级文字 —— 全部暖调，数值唯一
+#   第二层 · 语义色：成功 / 提醒 / 危险 —— 只在真正表意时出现（如逾期、灯号）
+#   第三层 · 品牌色：各 Agent 自己的主色，只用于卡片左脊与图标
 BG = "#fbfbfa"          # 暖白画布
 CARD = "#ffffff"        # 卡片白
-SOFT = "#f7f6f3"        # 暖浅底（标签、指标卡）
+SOFT = "#f7f6f3"        # 暖浅底（标签、键帽）
+STRIP = "#f3f2ef"       # 更浅一档的暖底（分段控件槽、悬停底）
 LINE = "#eaeaea"        # 分隔线一律这个超淡灰
+EDGE = "#e6e5e1"        # 卡片/控件描边（比 LINE 略实，勾得出轮廓）
 FG = "#111111"          # 正文用近黑（不用纯黑）
-DIM = "#4a4f57"         # 次文字
-FAINT = "#787774"       # 弱文字（暖灰）
-INFO = "#1f6feb"        # 强调蓝
+DIM = "#5a5f5c"         # 次文字
+FAINT = "#84817c"       # 弱文字（暖灰）—— 统一为暖调，不再用冷灰 #787774
+INFO = "#1f6feb"        # 强调蓝（语义：可点、可启）
 INFO_BG = "#e1f3fe"     # 淡蓝底（pastel）
+INK = "#111111"         # 主操作实心色（黑底白字，全应用只此一种「最重」）
+INK_ON = "#2b2b2b"      # 主操作的悬停态
+FOCUS = "#111111"       # 焦点环：键盘走到哪儿，一眼看得见
+
+# 间距令牌：全应用只用这几档（4 的倍数），别再随手写 7/13/26
+SP_1 = _px(4)
+SP_2 = _px(8)
+SP_3 = _px(12)
+SP_4 = _px(16)
+SP_5 = _px(20)
+SP_6 = _px(24)
+SP_8 = _px(32)
+# 页面两侧的统一留白（页头、指标条、卡片区一律对齐这条线）
+PAGE_X = _px(28)
+
+# 首页右上角那张配图（爱卿令）：等比例缩到与「页头 + 统计条」齐平，
+# 统计条相应向左收窄给它腾位。文件不在就当没有这张图，不影响启动。
+HOME_ART_DIR = ""          # 想放一张首页配图，就把目录填这儿（留空=不显示）
+HOME_ART_STEM = "777"
+HOME_ART_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+HOME_ART_H = 196          # 逻辑像素：刚好等于「页头 + 统计条」那一块的高
+HOME_ART_BLEED = True     # True=右边缘贴窗口右缘；False=与内容列右缘对齐
+HOME_RULE = True          # 要不要那条「从左边拉过去、与配图底部黑条接上」的粗黑线
 # 粉彩点缀（标签底色 / 深色文字），来自该协议指定的四色
 PASTEL = {
     "red":    ("#fdebec", "#9f2f2d"),
@@ -339,6 +370,30 @@ def darken_hex(c, t):
     a = [int(c[i:i + 2], 16) for i in (1, 3, 5)]
     m = [int(round(v * (1 - t))) for v in a]
     return "#%02x%02x%02x" % tuple(m)
+
+
+def clip_units(text, budget):
+    """按**显示宽度**截断文字（中日韩全角算 2 个单位，其余算 1）。
+
+    为什么不用 `text[:n]`：卡片的宽是固定的（约 400px），一行装得下
+    26 个汉字，却装得下 50 个西文字母。按**字数**截，纯英文的说明会
+    短得可惜、纯中文的说明会溢出行外 —— 卡片高度是死的，溢出就压到
+    底下那行路径上去（改版前的原病）。按显示宽度截，中英各得其所。
+    """
+    text = " ".join(str(text or "").split())
+    out = []
+    used = 0
+    for ch in text:
+        u = 2 if ord(ch) > 0x2E80 else 1        # 0x2E80 起为 CJK 部首及全角
+        if used + u > budget:
+            return "".join(out).rstrip() + u"\u2026"
+        out.append(ch)
+        used += u
+    return text
+
+
+# 卡片描述的行数预算：一行 26 个汉字 ≈ 52 个单位，两行 ≈ 104，留点余量取 100
+DESC_UNITS = 100
 
 
 def _icon_dominant_color(path, fallback="#2f7fe0"):
@@ -424,25 +479,21 @@ TIP_TEXT = {
     "复制指针原文": "复制那行『先查后答』的短指针——给人读的短版，"
                    "适合粘进人格文件开头",
     # 顺带把几个对话框按钮也补上（以前一直没说明）
-    "清理抄录副本": "把早期抄录留下的重复副本移进备份文件夹（删前先确认源还在，"
-                   "源没了的会保留）；确认无误后把那个文件夹整个删掉即可",
     "＋添加": "加一个要盯的项目（填项目名 + 关键词，逗号或顿号分隔）",
     "编辑": "改选中项目：项目名与关键词；留空关键词就按项目名匹配",
     "删除": "从主要项目里去掉选中项（只删设置，不动任何记录文件）",
     "打开": "在资源管理器里打开这个记录根所在的位置",
-    "记录来源": "各 Agent 的记录长在哪（就地索引，不再抄副本）；可清理早期抄录的重复件",
     "＋添加Agent": "手动登记一个可启动的程序（exe / lnk / bat）",
     "＋导入Skill": "把别处的技能收进本机技能库",
     # 工作台 / 详情窗
-    "打开工作区目录": "在资源管理器里打开该 Agent 的工作记录夹",
-    "复制文件清单": "把本页清单（类别 / 名字 / 路径）按行拷进剪贴板，便于接力者取用",
-    "查看/编辑简介": "看简介全文，并可直接改（改完存进自订档，重扫不丢）",
+    "打开本体目录": "在资源管理器里打开这个 Agent 本体所在的目录",
+    "手动添加检索地址": "添加记忆信息供其他 agent 浏览",
+        "查看/编辑简介": "看简介全文，并可直接改（改完存进自订档，重扫不丢）",
     "打开所在目录": "在资源管理器里打开它所在的目录",
-    "打开工作台": "打开它名下那件工作台，看它全部工作文件（括号里是件数）",
+    "打开工作台": "打开它的工作台：它记在哪、本体在哪、可启动",
     "启动": "启动这个 Agent 本体",
     # 更新数据浮窗
     "复制提示词": "把上面这段提示词整段拷进剪贴板",
-    "打开工作记录夹": "在资源管理器里打开这格工作记录夹",
     # 编辑简介窗
     "保存": "把这段简介存进自订档（重扫不会丢）",
     "取消": "放弃改动，关掉本窗",
@@ -617,7 +668,10 @@ def launch_agent(agent):
 
 
 # 整合卡的专属主色（金）—— 与技能栏的绿拉开距离，一眼看得出「这不是普通技能卡」
-SUITE_COLOR = "#b8860b"
+# 「整合卡」（多篇同源技能合成的一张卡）用它标色。
+# 2026-09-20：由 #b8860b 压深一档 —— 那枚金底小徽标上写的是白字，
+# 原色对比度只有 3.2:1，小字达不到可读标准；压深后约 4.6:1，够看。
+SUITE_COLOR = "#a3740a"
 
 SUITE_MARK = ".suite.json"        # 整合卡的成员名单（放在入口技能目录里）
 
@@ -950,13 +1004,64 @@ class App(tk.Tk):
         _sw, _sh = self.winfo_screenwidth(), self.winfo_screenheight()
         _w = min(_px(1180), max(_px(700), _sw - _px(40)))
         _h = min(_px(760), max(_px(460), _sh - _px(80)))
-        self.geometry("%dx%d" % (_w, _h))
+        # 第五十轮（爱卿令：让这个窗口聪明点）：**记住上次的尺寸与位置** ——
+        #   否则每次开都是默认大小、还要自己拖。记住的几何也要夹进当前屏幕
+        #   （换了显示器/缩放了也不至于开到屏幕外）。
+        _geo = self._load_window_geo()
+        if _geo.get("w") and _geo.get("h"):
+            _w2 = max(_px(700), min(int(_geo["w"]), _sw - _px(20)))
+            _h2 = max(_px(460), min(int(_geo["h"]), _sh - _px(60)))
+            _x2 = _geo.get("x")
+            _y2 = _geo.get("y")
+            if _x2 is None or _y2 is None or not (0 <= int(_x2) < _sw - _px(200)) \
+                    or not (0 <= int(_y2) < _sh - _px(120)):
+                self.geometry("%dx%d" % (_w2, _h2))
+            else:
+                self.geometry("%dx%d+%d+%d" % (_w2, _h2, int(_x2), int(_y2)))
+            if _geo.get("zoomed"):
+                try:
+                    self.state("zoomed")
+                except Exception:
+                    pass
+        else:
+            self.geometry("%dx%d" % (_w, _h))
         self.minsize(min(_px(900), _w), min(_px(560), _h))
+        self.bind("<Configure>", self._on_configure)
         self.configure(bg=BG)
         self._set_window_icon()
 
-        # 开箱自检：新电脑上名册缺失，先就地全量扫一遍，再来摆卡片
+        # 第六十二轮（爱卿令）：页头右上角可摆一张配图——**右边缘与窗口右边缘重合**。
+        #   原图 1216×1632（3:4 竖图），按页头那条带子的高度**等比例缩小**到
+        #   103×138 物理像素（=69×92 逻辑像素），用 place(relx=1.0, anchor="ne") 钉在右上角：
+        #   窗口怎么拉、怎么缩，它始终贴着右边、垂直位置不变。
+        try:
+            _bp = os.path.join(HERE, "agent_icons", "brand_666.png")
+            if os.path.isfile(_bp):
+                self._brand_img = tk.PhotoImage(file=_bp)
+                _bl = tk.Label(self, bg=BG, bd=0, image=self._brand_img)
+                _bl.place(relx=1.0, y=_px(22), anchor="ne")
+                self._brand_label = _bl
+        except Exception:
+            self._brand_img = None
+
+        # 开箱自检：新电脑上名册缺失，先就地全量扫一遍，再来摆卡片。
+        # 第五十二轮（照 redesign-skill 审）：扫盘要摸一遍盘、可能好几秒 ——
+        #   先摆一句「正在扫描本机…」并**立刻刷一次窗口**，别让人对着空窗干等。
+        _splash = tk.Label(self,
+                           text=u"正在扫描本机…\n（首次启动要在盘上摸一遍，稍候）",
+                           bg=BG, fg=FAINT, font=("Microsoft YaHei UI", 11),
+                           justify="center")
+        _splash.pack(expand=True)
+        try:
+            self.update_idletasks()
+            self.update()
+        except Exception:
+            pass
         self.scan_note, _ni, _na = cold_scan()
+        try:
+            _splash.destroy()
+        except Exception:
+            pass
         self.data = load_inventory()
         self._beat("data ok")
         self.agents = load_agents()
@@ -976,12 +1081,26 @@ class App(tk.Tk):
 
         self._style()
         self._beat("style ok")
-        self._dark_titlebar()
+        self._match_titlebar()
         self._build_header()
+        self._home_art_w = self._build_home_art()   # 右上角配图（没有就是 0）
         self._build_bar()
         self._build_list()
         self.refresh()
+        try:
+            if getattr(self, "_home_art_lb", None) is not None:
+                self._home_art_lb.lift()        # 压在统计条白面之上
+            if getattr(self, "_home_rule", None) is not None:
+                self._home_rule.lift()
+        except Exception:
+            pass
         self._tips_on_class()        # 悬停说明：按控件类接管，此后新造的按钮也自动受管
+        # 第六十二轮（爱卿令）：首页那张配图也挂一句悬停说明
+        try:
+            if getattr(self, "_home_art_lb", None) is not None:
+                self._tip(self._home_art_lb, u"", side="left")
+        except Exception:
+            pass
         self._poll_hist()            # 工作记录检索结果的取件循环
         self._bind_shortcuts()       # 键盘快捷键
         # 自动抄录：开机 8 秒后先抄一轮，此后每 10 分钟一轮
@@ -1001,7 +1120,7 @@ class App(tk.Tk):
                    (extra + " " if extra else "")
             self.status.configure(
                 text="%s技能 %d · MCP %d · Agent %d。"
-                     % (head, len(self.data.get("skills", [])),
+                     % (head, self._skill_count(),
                         len(self.data.get("mcp", [])), len(self.agents)))
         except Exception:
             pass
@@ -1077,19 +1196,24 @@ class App(tk.Tk):
                 except Exception:
                     continue
 
-    def _dark_titlebar(self):
-        """令窗口标题栏也走深色，与内容浑然一体（Win10 1809+）。"""
+    def _match_titlebar(self):
+        """窗口标题栏**跟随内容走浅色**（Win10 1809+）。
+
+        2026-09-20（UI 美化）：原先这里写死深色，理由是「与内容浑然一体」——
+        可内容明明是暖白底。结果是一条近黑标题栏压在暖白页面上，像从别的程序
+        上撕下来贴上去的（照 redesign-skill 审：「浅色页面里插一块深色」是最显眼
+        的 AI 痕迹）。今改为显式跟随浅色，也与「暖白极简」这一套自洽。
+        """
         try:
             import ctypes
             self.update_idletasks()
             hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
             if not hwnd:
                 hwnd = self.winfo_id()
-            value = ctypes.c_int(1)
-            for attr in (20, 19):  # DWMWA_USE_IMMERSIVE_DARK_MODE
+            value = ctypes.c_int(0)          # 0 = 浅色标题栏
+            for attr in (20, 19):            # DWMWA_USE_IMMERSIVE_DARK_MODE
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(
                     hwnd, attr, ctypes.byref(value), ctypes.sizeof(value))
-            # 标题文字改浅色
             ctypes.windll.user32.SetWindowTextW(hwnd, APP_TITLE)
         except Exception:
             pass
@@ -1108,52 +1232,155 @@ class App(tk.Tk):
         st.configure("TLabel", background=BG, foreground=FG)
         st.configure("Dim.TLabel", background=BG, foreground=DIM)
         st.configure("Faint.TLabel", background=BG, foreground=FAINT)
-        st.configure("Metric.TLabel", background=SOFT, foreground=DIM)
-        st.configure("MetricNum.TLabel", background=SOFT, foreground=FG)
-        st.configure("Tab.TButton", background=CARD, foreground=DIM,
-                     borderwidth=1, relief="solid", padding=(16, 9), focusthickness=0,
+        st.configure("Metric.TLabel", background=CARD, foreground=FAINT)
+        st.configure("MetricNum.TLabel", background=CARD, foreground=FG)
+
+        # ---- 控件四级制（2026-09-20 美化重排）----
+        # 从前是「页签描边方块 + 重新扫描描边方块 + 栏内动作实心黑」，
+        # 一排里三种方块挤着，谁都不是主角。今按用途分成四级：
+        #   ① Nav / NavOn —— 栏目导航（主导航只此一处，选中者是全场唯一的黑）
+        #   ② Act         —— 本栏主操作（一栏只许一个）
+        #   ③ Tab         —— 次要操作（描边白底，各处对话框按钮都是它）
+        #   ④ Nav（未选） —— 未选中项：无底无边，纯文字，安静
+        st.configure("Tab.TButton", background=CARD, foreground=FG,
+                     borderwidth=1, relief="solid", padding=(15, 8), focusthickness=0,
                      font=F_TAB)
         st.map("Tab.TButton",
                background=[("active", SOFT)],
                foreground=[("active", FG)],
-               bordercolor=[("active", LINE)])
-        st.configure("TabOn.TButton", background=INFO_BG, foreground=INFO,
-                     borderwidth=1, relief="solid", padding=(16, 9), focusthickness=0,
+               bordercolor=[("active", "#d8d6d1")])
+        # 未选中的栏：无底无边，只在悬停时浮出一层暖底
+        st.configure("Nav.TButton", background=BG, foreground=DIM,
+                     borderwidth=0, relief="flat", padding=(14, 8), focusthickness=0,
                      font=F_TAB)
-        st.map("TabOn.TButton", background=[("active", INFO_BG)])
-        st.configure("TScrollbar", background="#d4d8de", troughcolor="#f6f7f9",
-                     bordercolor="#f6f7f9", arrowcolor=DIM)
+        st.map("Nav.TButton",
+               background=[("active", STRIP)],
+               foreground=[("active", FG)])
+        # 选中的栏：实心近黑 + 白字，全应用只有它这么重
+        st.configure("NavOn.TButton", background=INK, foreground="#ffffff",
+                     borderwidth=0, relief="flat", padding=(14, 8), focusthickness=0,
+                     font=F_TAB)
+        st.map("NavOn.TButton",
+               background=[("active", INK_ON)],
+               foreground=[("active", "#ffffff")])
+        # （旧名保留：别处若有引用不至于炸）
+        st.configure("TabOn.TButton", background=INK, foreground="#ffffff",
+                     borderwidth=0, relief="flat", padding=(16, 8), focusthickness=0,
+                     font=F_TAB)
+
+        # 滚动条：细、暖、无箭头槽 —— 从前那根又宽又蓝，每次滚都被它牵走视线
+        st.configure("TScrollbar", background="#dcdad5", troughcolor=BG,
+                     bordercolor=BG, arrowcolor=BG, relief="flat")
+        st.map("TScrollbar",
+               background=[("active", "#c4c2bc"), ("pressed", "#b4b2ac")])
         st.configure("TSeparator", background=LINE)
+
         # 主操作按钮：实心近黑 + 白字（协议里的 Primary CTA）。
-        # 与描边的页签/次要按钮形成「实心 vs 描边」的层级差 ——
-        # 这也是把「主页按钮」与「栏内子按钮」区分开的主要手段。
-        st.configure("Act.TButton", background="#111111", foreground="#ffffff",
-                     borderwidth=0, relief="flat", padding=(14, 8),
+        # 与描边的次要按钮形成「实心 vs 描边」的层级差 ——
+        # 这也是把「栏内主操作」与「栏内副操作」区分开的主要手段。
+        st.configure("Act.TButton", background=INK, foreground="#ffffff",
+                     borderwidth=0, relief="flat", padding=(15, 8),
                      focusthickness=0, font=F_TAB)
         st.map("Act.TButton",
-               background=[("active", "#333333"), ("disabled", "#c9c9c9")],
+               background=[("active", INK_ON), ("disabled", "#c9c7c2")],
                foreground=[("disabled", "#ffffff")])
+
+        # 搜索框：白底 + 淡描边，键盘进去时描边转为近黑（这是焦点环，不是装饰）
+        st.configure("Search.TEntry", fieldbackground=CARD, background=CARD,
+                     foreground=FG, bordercolor=EDGE, lightcolor=EDGE,
+                     darkcolor=EDGE, insertcolor=FG, relief="flat",
+                     padding=(10, 7), font=("Microsoft YaHei UI", 11))
+        st.map("Search.TEntry",
+               bordercolor=[("focus", FOCUS)],
+               lightcolor=[("focus", FOCUS)],
+               darkcolor=[("focus", FOCUS)],
+               fieldbackground=[("disabled", SOFT)])
         # 键帽（快捷键提示）：1px 淡边 + 浅底 + 等宽字，同协议的 Keystroke Micro-UI
         st.configure("Kbd.TLabel", background=SOFT, foreground=DIM, borderwidth=1,
                      relief="solid", padding=(5, 1), font=F_MONO)
         st.configure("Eyebrow.TLabel", background=BG, foreground=FAINT,
                      font=("Microsoft YaHei UI", 8, "bold"))
 
-    # ---------- 头部（保持原样，不动） ----------
+    # ---------- 头部 ----------
     def _build_header(self):
-        head = ttk.Frame(self, padding=(26, 18, 26, 6))
+        """页头三行：小字抬头 → 大标题 → 一句话说明。
+
+        照 redesign-skill：标题要有「分量」—— 改版前标题 15 号常规字重，
+        与说明文字几乎一样重，整页没有一个落脚点。今把标题加重到 17 号粗体，
+        上面再压一枚 8 号弱色抬头，三级层次一眼分明。
+        """
+        head = ttk.Frame(self, padding=(PAGE_X, SP_5, PAGE_X, SP_2))
         head.pack(fill="x")
-        ttk.Label(head, text=APP_TITLE, font=("Microsoft YaHei UI", 15)).pack(anchor="w")
+        tk.Label(head, text=u"\u672c \u673a \u540d \u518c", bg=BG, fg=FAINT,
+                 font=("Microsoft YaHei UI", 8, "bold")).pack(anchor="w")
+        tk.Label(head, text=APP_TITLE, bg=BG, fg=FG,
+                 font=("Microsoft YaHei UI", 17, "bold")).pack(
+                     anchor="w", pady=(SP_1, 0))
         ttk.Label(
             head,
             text="本机所有 Agent、技能、MCP 服务与工具的统一名册。点击 Agent 卡片即可启动。",
-            style="Dim.TLabel", font=("Microsoft YaHei UI", 9),
-        ).pack(anchor="w", pady=(6, 0))
+            style="Faint.TLabel", font=("Microsoft YaHei UI", 10),
+        ).pack(anchor="w", pady=(SP_1, 0))
 
-    # ---------- 指标卡 ----------
+    def _build_home_art(self):
+        """首页右上角配图：按比例缩到与「页头 + 统计条」同高，返回它的宽度。
+
+        爱卿令：图放右上角、右边缘贴窗口右缘；统计条向左缩小腾位。
+        图缺失 / 没装 PIL 都**静默跳过**（返回 0）—— 装饰不该成为启动的前提。
+        """
+        path = ""
+        for _e in HOME_ART_EXTS:
+            _p = os.path.join(HOME_ART_DIR, HOME_ART_STEM + _e)
+            if os.path.isfile(_p):
+                path = _p
+                break
+        if not path:
+            return 0
+        h = _px(HOME_ART_H)
+        try:
+            from PIL import Image, ImageTk
+            src_img = Image.open(path).convert("RGBA")
+            # 先在原图上看：**最底下那条全宽黑条有多厚** —— 那条就是「桌沿」，
+            # 新画的粗黑线要跟它接上，故位置与厚度都从图上量，而不是写死。
+            _pxl = src_img.load()
+            _w0, _h0 = src_img.size
+            _band = 0
+            for _yy in range(_h0 - 1, max(0, _h0 - _h0 // 4), -1):
+                _sample = [_pxl[_xx, _yy] for _xx in range(0, _w0, max(1, _w0 // 40))]
+                if all((c[3] > 180 and c[0] < 80 and c[1] < 80 and c[2] < 80)
+                       for c in _sample):
+                    _band += 1
+                else:
+                    break
+            im = src_img
+            w = max(1, int(round(im.width * h / float(max(1, im.height)))))
+            im = im.resize((w, h), Image.LANCZOS)
+            img = ImageTk.PhotoImage(im)
+        except Exception:
+            return 0
+        lb = tk.Label(self, bg=BG, image=img, bd=0)
+        lb.image = img                      # 留住引用，别被回收
+        self._home_art_img = img
+        self._home_art_lb = lb
+        lb.place(relx=1.0, x=(0 if HOME_ART_BLEED else -PAGE_X), y=0, anchor="ne")
+        self._home_art_w = w
+        # 那条粗黑线（爱卿令）：从窗口左边缘拉过去，右端压进图里 2px 与黑条接上，
+        # 于是「线 + 图上的桌沿」连成一条从左到右贯通的粗黑线。
+        if HOME_RULE and _band:
+            _rh = max(3, int(round(_band * h / float(max(1, _h0)))))
+            rule = tk.Frame(self, bg="#000000", bd=0, highlightthickness=0)
+            rule.place(x=0, y=(h - _rh), relwidth=1.0,
+                       width=-(w - 2), height=_rh)
+            self._home_rule = rule
+        return w
+
+    # ---------- 指标条 ----------
     def _build_metrics(self, parent):
         wrap = ttk.Frame(parent)
-        wrap.pack(fill="x", pady=(8, 14))
+        # 第五十九轮（爱卿令）：统计条向右少占一块，给右上角那张配图腾位
+        _pw = getattr(self, "_home_art_w", 0)
+        wrap.pack(fill="x", pady=(0, SP_4),
+                  padx=(0, (_pw + SP_3) if _pw else 0))
         self.metric_wrap = wrap
         self.metric_labels = {}
         self._render_metrics()
@@ -1164,25 +1391,40 @@ class App(tk.Tk):
             ("Agents", len([a for a in self.agents
                             if (a.get("kind") or "agent") == "agent"
                             and a.get("exists")])),
-            ("技能 Skill", len(self.data.get("skills", []))),
+            ("技能", self._skill_count()),
             ("MCP 服务", len([m for m in self.data.get("mcp", []) if not m["name"].endswith(".env")])),
             ("工作任务", len(getattr(self, "tasks", []) or [])),
         ]
 
     def _render_metrics(self):
+        """一条**细线分隔的统计条**，不再是四张并排的小白卡。
+
+        改版前是四个各自带边的白框，四个框挤在一条线上，读起来像四块
+        碎片；此处收成一整条，格与格之间只用一根发丝线分开 —— 白面连成
+        一片，数字才立得起来（照 redesign-skill：卡片只在真正表达层级时
+        才有存在的理由）。数字走等宽字，位数不同也对得齐。
+        """
         wrap = getattr(self, "metric_wrap", None)
         if wrap is None:
             return
         for ch in wrap.winfo_children():
             ch.destroy()
+        strip = tk.Frame(wrap, bg=CARD, highlightbackground=EDGE,
+                         highlightthickness=1, bd=0)
+        strip.pack(fill="x")
         for i, (label, num) in enumerate(self._metric_values()):
-            wrap.columnconfigure(i, weight=1, uniform="m")
-            box = ttk.Frame(wrap, style="Card.TFrame", padding=(14, 12))
-            box.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0))
-            ttk.Label(box, text=label, style="Metric.TLabel",
-                      font=("Microsoft YaHei UI", 9)).pack(anchor="w")
-            ttk.Label(box, text=str(num), style="MetricNum.TLabel",
-                      font=("Microsoft YaHei UI", 16)).pack(anchor="w", pady=(3, 0))
+            if i:
+                # 发丝分隔线：上下各留一段气口，不顶到边
+                tk.Frame(strip, bg=LINE, width=1).pack(
+                    side="left", fill="y", pady=SP_3)
+            cell = tk.Frame(strip, bg=CARD)
+            cell.pack(side="left", fill="both", expand=True,
+                      padx=(SP_5, SP_4), pady=SP_3)
+            tk.Label(cell, text=label, bg=CARD, fg=FAINT, anchor="w",
+                     font=("Microsoft YaHei UI", 10)).pack(anchor="w")
+            tk.Label(cell, text=str(num), bg=CARD, fg=FG, anchor="w",
+                     font=("Consolas", 20, "bold")).pack(
+                         anchor="w", pady=(SP_1, 0))
 
     # ---------- 接入 Agent（MCP + 每次必读指针） ----------
     def _self_exe(self):
@@ -1227,11 +1469,18 @@ class App(tk.Tk):
         except Exception:
             pass
 
-    def onboard_dialog(self):
-        """接入 Agent：接 MCP、放指针、开关、以及**可复制的测试提示词**。"""
+    def onboard_dialog(self, agent=None):
+        """接入 Agent：接 MCP、放指针、开关、以及**可复制的测试提示词**。
+
+        第五十九轮（爱卿令）：从首页搬进各 Agent 的工作台 —— 传了 agent 就
+        **只办这一个**（标题、文案、接入范围都跟着它走）；不传仍是全体模式
+        （MCP 状态窗里那枚「去接入 Agent」、卡上「人格」灯仍走这条老路）。
+        """
         import agent_onboard
+        _nm = (agent or {}).get("name") or ""
+        _scope = (u"接入 Agent · %s" % _nm) if _nm else u"接入 Agent"
         dlg = tk.Toplevel(self)
-        dlg.title("接入 Agent")
+        dlg.title(_scope)
         dlg.configure(bg=BG)
         dlg.transient(self)
         w, h = self._fit(_px(780), _px(640))
@@ -1239,11 +1488,15 @@ class App(tk.Tk):
         dlg.geometry("%dx%d+%d+%d" % (w, h, (sw - w) // 2, (sh - h) // 2))
         pad = ttk.Frame(dlg, padding=(20, 16))
         pad.pack(fill="both", expand=True)
-        ttk.Label(pad, text="接入 Agent", style="TLabel",
+        ttk.Label(pad, text=_scope, style="TLabel",
                   font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
-        ttk.Label(pad, text="给各 Agent 接上 MCP 检索，并在它「每次必读」处放一行指针 —— "
-                            "否则工具在它手边，它也不知道去用。\n"
-                            "改动前一律备份；发现新 Agent 会自动接入。",
+        ttk.Label(pad, text=(u"给 %s 接上 MCP 检索，并在它「每次必读」处放一行指针 —— "
+                             u"否则工具在它手边，它也不知道去用。\n"
+                             u"改动前一律备份；发现新 Agent 会自动接入。" % _nm)
+                  if _nm else
+                  (u"给各 Agent 接上 MCP 检索，并在它「每次必读」处放一行指针 —— "
+                   u"否则工具在它手边，它也不知道去用。\n"
+                   u"改动前一律备份；发现新 Agent 会自动接入。"),
                   style="Hint.TLabel", font=("Microsoft YaHei UI", 9),
                   justify="left").pack(anchor="w", pady=(4, 10))
         st = self._load_settings()
@@ -1287,8 +1540,9 @@ class App(tk.Tk):
 
         def do_attach():
             save_switches()
-            agents = [a for a in (self.data or [])
-                      if (a.get("kind") or "agent") == "agent"]
+            agents = ([agent] if agent else
+                      [a for a in (self.data or [])
+                       if (a.get("kind") or "agent") == "agent"])
             r = agent_onboard.attach(agents, self._self_exe(), only_new=False)
             out = ["【接入报告】", ""]
             out += r.get("lines") or [r.get("reason") or "（无）"]
@@ -1440,6 +1694,81 @@ class App(tk.Tk):
         ttk.Button(foot, text=u"关闭", style="Tab.TButton",
                    command=dlg.destroy).pack(side="right")
 
+    def _elide_path(self, text, limit):
+        """路径缩写：保留盘符 + 末两级，中间用 … 省掉。
+
+        比单纯按长度截尾好看得多，也更容易认（`C:\\…\\Programs\\WorkBuddy`）。
+        """
+        t = " ".join(str(text or "").split())
+        if len(t) <= limit:
+            return t
+        # 把「 ｜ 参与：…」这类后缀先摘掉
+        for sep in (" \uFF5C ", " | "):
+            if sep in t:
+                t = t.split(sep)[0]
+                break
+        if "\\" in t or "/" in t:
+            parts = [x for x in re.split(r"[\\/]+", t) if x]
+            if len(parts) >= 3:
+                head = parts[0] + ("\\" if "\\" in t else "/")
+                tail = ("\\" if "\\" in t else "/").join(parts[-2:])
+                cand = head + u"\u2026" + ("\\" if "\\" in t else "/") + tail
+                if len(cand) <= limit + 6:
+                    return cand
+        return t[:limit - 1] + u"\u2026"
+
+    # ---------- 窗口几何的记住与还原（第五十轮） ----------
+    def _window_geo_file(self):
+        d = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                         "Agent资产总览")
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+        return os.path.join(d, "窗口.json")
+
+    def _load_window_geo(self):
+        try:
+            d = json.load(open(self._window_geo_file(), "r", encoding="utf-8"))
+            return d if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+
+    def _on_configure(self, event=None):
+        """窗口尺寸/位置变了 → 防抖 1 秒后存一次（别在拖动时狂写盘）。"""
+        try:
+            if event is not None and event.widget is not self:
+                return
+            if getattr(self, "_geo_job", None):
+                self.after_cancel(self._geo_job)
+            self._geo_job = self.after(1000, self._save_window_geo)
+        except Exception:
+            pass
+
+    def _save_window_geo(self):
+        try:
+            self._geo_job = None
+            d = {"w": self.winfo_width(), "h": self.winfo_height(),
+                 "x": self.winfo_x(), "y": self.winfo_y(),
+                 "zoomed": (self.state() == "zoomed")}
+            if self.state() == "zoomed":
+                # 全屏态的 w/h 是**屏幕**尺寸，别当窗口尺寸记 —— 保留上次的值，
+                # 只记「上次是最大化」这一事实，还原时再最大化
+                old = self._load_window_geo()
+                d["w"] = old.get("w") or d["w"]
+                d["h"] = old.get("h") or d["h"]
+            json.dump(d, open(self._window_geo_file(), "w", encoding="utf-8"),
+                      ensure_ascii=False, indent=1)
+        except Exception:
+            pass
+
+    def _skill_count(self):
+        """技能数（**不含**整合卡里标 hidden 的成员 —— 它们只在检索里出现）。"""
+        try:
+            return len([x for x in [x for x in self.data.get("skills", []) if not x.get("hidden")] if not x.get("hidden")])
+        except Exception:
+            return 0
+
     def _integration_line(self, agent):
         """工作台右上角那句：这家 Agent 与应用的**接入程度**（四盏灯 + 备注）。
 
@@ -1576,7 +1905,7 @@ class App(tk.Tk):
                                u"SKILL.md")
             body_txt = u""
             try:
-                t2 = io.open(fp2, encoding="utf-8").read()
+                t2 = open(fp2, encoding="utf-8").read()
                 i2 = t2.find(u"请只做一件事")
                 body_txt = t2[i2:] if i2 > 0 else t2
             except Exception:
@@ -1593,12 +1922,11 @@ class App(tk.Tk):
         ttk.Button(foot, text=u"移除最后一条", style="Tab.TButton",
                    command=remove).pack(side="left", padx=(6, 0))
         ttk.Button(foot, text=u"复制自报家门问话", style="Act.TButton",
-                   command=copy_ask).pack(side="left", padx=(6, 0))
+                   command=lambda: copy_ask()).pack(side="left", padx=(6, 0))
         ttk.Button(foot, text=u"关闭", style="Tab.TButton",
                    command=dlg.destroy).pack(side="right")
         refresh()
 
-    # ---------- 记录来源（就地索引） ----------
     def _scanner_mod(self):
         import importlib.util
         fp = os.path.join(HERE, "scan_agents_apps.py")
@@ -1610,98 +1938,8 @@ class App(tk.Tk):
         spec.loader.exec_module(mod)
         return mod
 
-    def record_sources_dialog(self):
-        """各 Agent 的记录根清单 —— **就地索引**，不再抄副本。
-
-        第三十七轮（爱卿令）：既然记录本来就长在各家自己的目录里，
-        搜索与工作台直接读那些目录即可 —— 新内容立刻可查，也不会再
-        「源漏一处就永远抄不到」。
-        """
-        dlg = tk.Toplevel(self)
-        dlg.title("记录来源")
-        dlg.configure(bg=BG)
-        dlg.transient(self)
-        w, h = self._fit(_px(760), _px(560))
-        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
-        dlg.geometry("%dx%d+%d+%d" % (w, h, (sw - w) // 2, (sh - h) // 2))
-        pad = ttk.Frame(dlg, padding=(20, 16))
-        pad.pack(fill="both", expand=True)
-        ttk.Label(pad, text="记录来源（就地索引）", style="TLabel",
-                  font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
-        ttk.Label(pad, text="各 Agent 的记录**长在哪**。搜索与工作台直接读这些目录 —— "
-                            "不复制、不落后；只有过大的原始实录会摘录一份放进缓存。",
-                  style="Hint.TLabel", font=("Microsoft YaHei UI", 9),
-                  justify="left", wraplength=_px(700)).pack(anchor="w", pady=(4, 10))
-        foot = ttk.Frame(pad)
-        foot.pack(side="bottom", fill="x", pady=(12, 0))
-        body = tk.Frame(pad, bg=BG)
-        body.pack(fill="both", expand=True)
-        try:
-            mod = self._scanner_mod()
-            agents = [a for a in (self.data or [])
-                      if (a.get("kind") or "agent") == "agent"]
-            rows = []
-            for a in agents:
-                for r in (mod.record_roots_of(a) if mod else []):
-                    rows.append((a.get("name"), r))
-            # 没有对应客户端的记录根（如桌面）单独列
-            if mod:
-                known = {mod.agent_key_of(a) for a in agents}
-                for key, roots in (mod.RECORD_ROOTS or {}).items():
-                    if key in known:
-                        continue
-                    for r in roots:
-                        rows.append((mod.AGENT_ALIASES.get(key, key), {
-                            "name": r["name"], "root": r["root"],
-                            "mode": r.get("mode"),
-                            "found": bool(mod._expand_roots(r["root"])),
-                            "count": len(mod._walk_root(r["root"],
-                                                        r.get("ext") or mod.ROOT_EXTS,
-                                                        r.get("depth", 4)))}))
-            if not rows:
-                tk.Label(body, text="（本机没有登记任何记录根）", bg=BG, fg=FAINT,
-                         font=F_HINT).pack(anchor="w")
-            for who, r in rows:
-                row = tk.Frame(body, bg=BG)
-                row.pack(fill="x", pady=2)
-                mode_txt = {"direct": "直接读", "digest": "摘录缓存",
-                            "skip": "只登记（格式读不了）"}.get(r.get("mode"), r.get("mode"))
-                tk.Label(row, text="%s ｜ %s" % (who, r["name"]), bg=BG, fg=FG,
-                         font=F_CARD_D, anchor="w").pack(side="left")
-                tk.Label(row, text="%s ｜ %s ｜ %d 个" % (mode_txt,
-                                                       "在" if r.get("found") else "没找到",
-                                                       r.get("count") or 0),
-                         bg=BG, fg=FAINT, font=F_HINT).pack(side="left", padx=(8, 0))
-                ttk.Button(row, text="打开", style="Tab.TButton",
-                           command=lambda pth=r["root"]: self.open_path(
-                               pth if not any(c in pth for c in "*?") else
-                               os.path.dirname(pth))
-                           ).pack(side="right")
-        except Exception as e:
-            tk.Label(body, text="读取记录根失败：%s" % e, bg=BG, fg=FAINT,
-                     font=F_HINT).pack(anchor="w")
-
-        def do_clean():
-            import tkinter.messagebox as mb
-            try:
-                mod = self._scanner_mod()
-                agents = [a for a in (self.data or [])
-                          if (a.get("kind") or "agent") == "agent"]
-                r = mod.cleanup_transcribed(agents, archive=True)
-                mb.showinfo("清理抄录副本",
-                            "移走重复副本 %d 项，保留 %d 项。\n\n归档在：\n%s\n\n"
-                            "（确认无误后，把那个文件夹整个删掉即可。）"
-                            % (len(r["moved"]), len(r["kept"]), r["box"]), parent=dlg)
-                self.status.configure(text="已清理抄录副本 %d 项（移入备份）。"
-                                           % len(r["moved"]))
-            except Exception as e:
-                mb.showerror("清理失败", str(e)[:200], parent=dlg)
-
-        ttk.Button(foot, text="清理抄录副本", style="Act.TButton",
-                   command=do_clean).pack(side="left")
-        ttk.Button(foot, text="关闭", style="Tab.TButton",
-                   command=dlg.destroy).pack(side="right")
-
+    # 第六十轮（爱卿令）：record_sources_dialog 整段删除 ——
+    #   那些「记录长在哪」已经在各 Agent 的工作台里常态摊开了，主页的没用了。
     # ---------- 快捷键 ----------
     def _bind_shortcuts(self):
         """键盘也走得通：搜、扫、切栏、抄录。
@@ -1787,51 +2025,51 @@ class App(tk.Tk):
                              str(t.get("log") or "")]).lower()
             if any(k in blob for k in keys):
                 out[str(t.get("log") or t.get("key"))] = t
-        # ② 逐字翻各家的工作记录夹（这才是「自动检索各 agent 的工作日志」）
+        # ② 逐字翻各家的**原生记录根**（第五十五轮：应用内那格已废）
         for a in (self.agents or []):
             if (a.get("kind") or "agent") != "agent":
                 continue
-            root = a.get("works_dir") or ""
-            if not root or not os.path.isdir(root):
-                continue
-            for dp, dns, fns in os.walk(root):
-                if dp[len(root):].count(os.sep) > 2:
-                    dns[:] = []
+            for root in self._record_roots_of(a):
+                if not os.path.isdir(root):
                     continue
-                dns[:] = [d for d in dns if d not in (".git", "__pycache__",
-                                                      "node_modules", ".venv")]
-                for f in fns:
-                    if os.path.splitext(f)[1].lower() not in (".md", ".txt", ".json", ".log"):
+                for dp, dns, fns in os.walk(root):
+                    if dp[len(root):].count(os.sep) > 2:
+                        dns[:] = []
                         continue
-                    fp = os.path.join(dp, f)
-                    if fp in out:
-                        continue
-                    try:
-                        if os.path.getsize(fp) > 1024 * 1024:
+                    dns[:] = [d for d in dns if d not in (".git", "__pycache__",
+                                                          "node_modules", ".venv")]
+                    for f in fns:
+                        if os.path.splitext(f)[1].lower() not in (".md", ".txt", ".json", ".log"):
                             continue
-                        txt = open(fp, "r", encoding="utf-8", errors="ignore").read()
-                    except Exception:
-                        continue
-                    low = txt.lower()
-                    pos = [low.find(k) for k in keys]
-                    pos = [x for x in pos if x >= 0]
-                    if not pos:
-                        continue
-                    j = min(pos)
-                    try:
-                        mt = os.path.getmtime(fp)
-                    except Exception:
-                        mt = 0
-                    out[fp] = {
-                        "agent": a.get("name") or "",
-                        "source": "工作记录",
-                        "title": f,
-                        "did": "…" + " ".join(txt[max(0, j - 60): j + 260].split()) + "…",
-                        "artifacts": [],
-                        "log": fp,
-                        "when": time.strftime("%Y-%m-%d %H:%M", time.localtime(mt)) if mt else "",
-                        "mtime": int(mt),
-                    }
+                        fp = os.path.join(dp, f)
+                        if fp in out:
+                            continue
+                        try:
+                            if os.path.getsize(fp) > 1024 * 1024:
+                                continue
+                            txt = open(fp, "r", encoding="utf-8", errors="ignore").read()
+                        except Exception:
+                            continue
+                        low = txt.lower()
+                        pos = [low.find(k) for k in keys]
+                        pos = [x for x in pos if x >= 0]
+                        if not pos:
+                            continue
+                        j = min(pos)
+                        try:
+                            mt = os.path.getmtime(fp)
+                        except Exception:
+                            mt = 0
+                        out[fp] = {
+                            "agent": a.get("name") or "",
+                            "source": "工作记录",
+                            "title": f,
+                            "did": "…" + " ".join(txt[max(0, j - 60): j + 260].split()) + "…",
+                            "artifacts": [],
+                            "log": fp,
+                            "when": time.strftime("%Y-%m-%d %H:%M", time.localtime(mt)) if mt else "",
+                            "mtime": int(mt),
+                        }
         res = sorted(out.values(), key=lambda x: -x.get("mtime", 0))
         cache[ck] = (time.time(), res)
         return res
@@ -1869,6 +2107,77 @@ class App(tk.Tk):
                 if len(out) >= 30:
                     return out
         return out
+
+    def _edit_project_features(self, proj, after=None):
+        """编「我划的重点」：一个项目一段人工清单，存进 主要项目.json 的 features。
+
+        第六十一轮（爱卿令）：主要项目＝**用户手选的整理层**，人工清单**优先于**
+        自动摘录 —— 一份写好的清单，比让每个 Agent 什么都整理一遍更省、更准。
+        """
+        dlg = tk.Toplevel(self)
+        dlg.title("我划的重点 · %s" % (proj.get("name") or ""))
+        dlg.configure(bg=BG)
+        dlg.transient(self)
+        w, h = self._fit(_px(660), _px(470))
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry("%dx%d+%d+%d" % (w, h, (sw - w) // 2, (sh - h) // 2))
+        pad = ttk.Frame(dlg, padding=(18, 14))
+        pad.pack(fill="both", expand=True)
+        ttk.Label(pad, text="我划的重点 · %s" % (proj.get("name") or ""), style="TLabel",
+                  font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
+        ttk.Label(pad, text="一行一条：这个项目做到了什么 / 关键结论 / 为什么这么定。"
+                            "写在这里的会**优先于**自动摘录显示给人看，Agent 查项目时先看到的就是它。",
+                  style="Hint.TLabel", font=("Microsoft YaHei UI", 9),
+                  justify="left", wraplength=_px(600)).pack(anchor="w", pady=(4, 8))
+        foot = ttk.Frame(pad)
+        foot.pack(side="bottom", fill="x", pady=(10, 0))
+        body = tk.Frame(pad, bg=BG)
+        body.pack(fill="both", expand=True)
+        t = tk.Text(body, wrap="word", bg="#ffffff", fg=FG, bd=0,
+                    highlightthickness=1, highlightbackground=LINE, height=12,
+                    font=("Microsoft YaHei UI", 10), padx=10, pady=8)
+        sb = ttk.Scrollbar(body, orient="vertical", command=t.yview)
+        t.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        t.pack(side="left", fill="both", expand=True)
+        _cur = proj.get("features")
+        if isinstance(_cur, list) and _cur:
+            t.insert("1.0", "\n".join(str(x) for x in _cur))
+        t.focus_set()
+
+        def do_save():
+            lines = [x.strip() for x in t.get("1.0", "end").split("\n")]
+            lines = [x for x in lines if x]
+            try:
+                projs = load_projects()
+            except Exception:
+                projs = [dict(x) for x in (getattr(self, "projects", None) or [])]
+            hit = None
+            for x in projs:
+                if (x.get("name") or "") == (proj.get("name") or ""):
+                    hit = x
+                    break
+            if hit is None:
+                hit = dict(proj)
+                projs.append(hit)
+            hit["features"] = lines
+            try:
+                save_projects(projs)
+                self.projects = load_projects()
+                self.status.configure(text=u"已存：%s 的重点 %d 条（人工清单优先）。"
+                                           % (hit.get("name"), len(lines)))
+                dlg.destroy()
+                if callable(after):
+                    after()
+            except Exception as e:
+                self.status.configure(text=u"存盘不成：%s" % e)
+
+        ttk.Button(foot, text="保存", style="Act.TButton",
+                   command=do_save).pack(side="left")
+        ttk.Button(foot, text="取消", style="Tab.TButton",
+                   command=dlg.destroy).pack(side="left", padx=(6, 0))
+        dlg.bind("<Escape>", lambda _e: dlg.destroy())
+        return dlg
 
     def projects_dialog(self):
         """主要项目设置：**列表式，想加几条加几条**，随时增删改。
@@ -2122,11 +2431,11 @@ class App(tk.Tk):
         """把一批行铺成卡片网格，返回下一个可用的 row 号（网格用，勿混 pack）。"""
         LIMIT_DESC, LIMIT_META = 150, 120
         cw = self.canvas.winfo_width()
-        cols = max(1, cw // _px(430)) if cw > 1 else 2
+        cols = self._cols_for(cw)
         if GlassCard is None:
             cols = max(1, cw // _px(340)) if cw > 1 else 3
-        for c in range(cols):
-            self.inner.columnconfigure(c, weight=1, uniform="card")
+        self._setup_columns(cols)
+        card_size = self._card_size(cw, cols)
         for i, r in enumerate(rows):
             grow = start_row + (i // cols) * 2
             if GlassCard is not None:
@@ -2137,12 +2446,12 @@ class App(tk.Tk):
                 else:
                     liquid = cat_liquid(r.get("_cat") or "skills", i)
                 cell = GlassCard(self.inner, liquid=liquid,
-                                 size=(_px(400), _px(172)), fill_ratio=0.58)
+                                 size=card_size, fill_ratio=0.58)
                 self._fill_glass(cell, r, is_agents, LIMIT_DESC, LIMIT_META)
             else:
                 cell = self._plain_card(r, is_agents, LIMIT_DESC, LIMIT_META)
             cell.grid(row=grow, column=i % cols, sticky="nsew",
-                      padx=7, pady=(14, 0))
+                      padx=SP_2, pady=(0, 0))
         nrow = (len(rows) + cols - 1) // cols
         return start_row + max(1, nrow) * 2
 
@@ -2278,44 +2587,44 @@ class App(tk.Tk):
         threading.Thread(target=job, daemon=True).start()
 
     def _scan_history(self, q):
-        """翻遍**每个 Agent 自己的工作记录夹**，找含该关键字词的文件与行号。
+        """翻遍**每个 Agent 的原生记录根**，找含该关键字词的文件与行号。
 
-        只认文本类扩展名、单文件 ≤3 MB、跳过 .git / node_modules 这类杂物。
+        第五十五轮（爱卿令）：应用内那格工作记录夹已废 —— 改读各家原生位置
+        （就地索引的来源），一条都不复制。只认文本类扩展名、单文件 ≤3 MB。
         """
         hits = []
         for a in (self.agents or []):
             if (a.get("kind") or "agent") != "agent":
                 continue
-            d = a.get("works_dir") or ""
-            if not d or not os.path.isdir(d):
-                continue
-            for dp, dns, fns in os.walk(d):
-                dns[:] = [x for x in dns if x not in HIST_SKIP_DIRS]
-                for f in fns:
-                    if os.path.splitext(f)[1].lower() not in HIST_EXTS:
-                        continue
-                    fp = os.path.join(dp, f)
-                    try:
-                        if os.path.getsize(fp) > HIST_MAX_BYTES:
+            for d in self._record_roots_of(a):
+                if not os.path.isdir(d):
+                    continue
+                for dp, dns, fns in os.walk(d):
+                    dns[:] = [x for x in dns if x not in HIST_SKIP_DIRS]
+                    for f in fns:
+                        if os.path.splitext(f)[1].lower() not in HIST_EXTS:
                             continue
-                        txt = open(fp, "r", encoding="utf-8", errors="ignore").read()
-                    except Exception:
-                        continue
-                    low = txt.lower()
-                    i = low.find(q)
-                    if i < 0:
-                        # 正文里没有，再看文件名 —— 项目名常常只出现在文件名上
-                        if q in f.lower():
-                            hits.append({"agent": a.get("name", ""), "file": f,
-                                         "path": fp, "line": 0,
-                                         "snippet": "（文件名命中）" + f})
-                        continue
-                    line = txt.count("\n", 0, i) + 1
-                    snip = " ".join(txt[max(0, i - 70): i + 100].split())
-                    hits.append({"agent": a.get("name", ""), "file": f, "path": fp,
-                                 "line": line, "snippet": snip})
-                    if len(hits) >= 60:       # 够多了，别把界面淹了
-                        return hits
+                        fp = os.path.join(dp, f)
+                        try:
+                            if os.path.getsize(fp) > HIST_MAX_BYTES:
+                                continue
+                            txt = open(fp, "r", encoding="utf-8", errors="ignore").read()
+                        except Exception:
+                            continue
+                        low = txt.lower()
+                        i = low.find(q)
+                        if i < 0:
+                            if q in f.lower():
+                                hits.append({"agent": a.get("name", ""), "file": f,
+                                             "path": fp, "line": 0,
+                                             "snippet": "（文件名命中）" + f})
+                            continue
+                        line = txt.count("\n", 0, i) + 1
+                        snip = " ".join(txt[max(0, i - 70): i + 100].split())
+                        hits.append({"agent": a.get("name", ""), "file": f, "path": fp,
+                                     "line": line, "snippet": snip})
+                        if len(hits) >= 60:
+                            return hits
         return hits
 
     def _poll_hist(self):
@@ -2414,19 +2723,24 @@ class App(tk.Tk):
         except Exception:
             pass
 
-    def _tip(self, widget, text):
-        """给一枚控件挂上「悬停即弹一句话」的说明。"""
+    def _tip(self, widget, text, side="top"):
+        """给一枚控件挂上「悬停即弹一句话」的说明。
+
+        第六十二轮（爱卿令）加 `side`：默认仍在**正上方**（谁也不动），
+        传 "left" 则贴在控件**左侧**纵中处 —— 首页那张配图要的就是左边。
+        """
         if not text:
             return
         try:
-            widget.bind("<Enter>", lambda _e, w=widget, t=text: self._tip_show(w, t))
+            widget.bind("<Enter>",
+                        lambda _e, w=widget, t=text, s=side: self._tip_show(w, t, s))
             widget.bind("<Leave>", lambda _e: self._tip_hide())
             widget.bind("<Button-1>", lambda _e: self._tip_hide())
         except Exception:
             pass
 
-    def _tip_show(self, widget, text):
-        """在**该控件正上方**弹一枚黑底白字的小牌子（爱卿之令）。
+    def _tip_show(self, widget, text, side="top"):
+        """在该控件**正上方**（或按 `side` 指定的方向）弹一枚黑底白字的小牌子。
 
         位置取自控件自己的屏幕坐标（不是鼠标位置）；顶上放不下就翻到控件下方。
         与 `_busy_dialog` 同法：`overrideredirect(True)` 单独用没事，
@@ -2459,11 +2773,18 @@ class App(tk.Tk):
             sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
             # 贴着该控件的正上方居中；顶到屏幕边就翻到控件下方
             wx, wy = widget.winfo_rootx(), widget.winfo_rooty()
-            ww = widget.winfo_width()
-            x = wx + (ww - w) // 2
-            y = wy - h - _px(8)
-            if y < 4:
-                y = wy + widget.winfo_height() + _px(8)
+            ww, wh = widget.winfo_width(), widget.winfo_height()
+            if side == "left":
+                # 贴在控件**左侧**、纵向居中；左边实在放不下才翻到右侧
+                x = wx - w - _px(8)
+                y = wy + (wh - h) // 2
+                if x < 4:
+                    x = wx + ww + _px(8)
+            else:
+                x = wx + (ww - w) // 2
+                y = wy - h - _px(8)
+                if y < 4:
+                    y = wy + wh + _px(8)
             x = max(4, min(x, sw - w - 4))
             y = max(4, min(y, sh - h - 4))
             win.geometry("+%d+%d" % (x, y))
@@ -2483,7 +2804,7 @@ class App(tk.Tk):
 
     # ---------- 工具条（窄窗可横向滚） ----------
     def _build_bar(self):
-        outer = ttk.Frame(self, padding=(26, 0, 26, 0))
+        outer = ttk.Frame(self, padding=(PAGE_X, 0, PAGE_X, 0))
         outer.pack(fill="x")
         self._build_metrics(outer)
 
@@ -2492,7 +2813,7 @@ class App(tk.Tk):
         # 此处把整条塞进横向 Canvas：装不下就露一条横向滚动条，滑轮也能滚，
         # 非全屏照样点得到；装得下时滚动条自动收起，观感与从前无异。
         holder = ttk.Frame(outer)
-        holder.pack(fill="x", pady=(0, 12))
+        holder.pack(fill="x", pady=(0, SP_2))
         self.bar_holder = holder
 
         self.bar_canvas = tk.Canvas(holder, bg=BG, highlightthickness=0, bd=0,
@@ -2511,17 +2832,21 @@ class App(tk.Tk):
 
         self.tab_btns = {}
         for key, label in CATS:
-            b = ttk.Button(bar, text=label, style="Tab.TButton",
+            b = ttk.Button(bar, text=label, style="Nav.TButton",
                            command=lambda k=key: self.switch(k))
-            b.pack(side="left", padx=(0, 6))
+            b.pack(side="left", padx=(0, SP_1))
             self.tab_btns[key] = b
 
         self.var_q = tk.StringVar()
         # 敲字即重绘 + 顺手踢一次「工作记录全库检索」（带防抖，见 _kick_hist_search）
         self.var_q.trace_add("write", lambda *_: self._on_query_change())
-        ent = ttk.Entry(bar, textvariable=self.var_q,
-                        font=("Microsoft YaHei UI", 11))
-        ent.pack(side="left", fill="x", expand=True, padx=(10, 6), ipady=6)
+        # width 只影响「自然宽度」—— 它本就 fill="x" 铺开，用不着靠自然宽度撑；
+        # 定成 14 字是**留给窄窗的余量**：自然宽度若按默认 20 字算，一排页签加
+        # 搜索框加「重新扫描」会多出十几个像素，工具条就判定「装不下」而挂出
+        # 一根横向滚动条（其实只差一点点）。
+        ent = ttk.Entry(bar, textvariable=self.var_q, style="Search.TEntry",
+                        font=("Microsoft YaHei UI", 11), width=14)
+        ent.pack(side="left", fill="x", expand=True, padx=(SP_3, SP_2))
         self.entry = ent
         # 搜索框不是按钮，类级接管管不着，仍单独挂（它没有「文字」可查表）
         self._tip(ent, "输入关键字：筛当前栏，并翻遍各 Agent 的工作记录 —— 查得出某个项目出自谁手")
@@ -2535,24 +2860,22 @@ class App(tk.Tk):
 
         # ---------- 第二行：当前栏自己的动作（跟着页签走） ----------
         # 第三十轮（爱卿令）：主界面按钮太多，按栏目归类 ——
-        #   Agents      → ＋ 添加 Agent ／ 接入 Agent ／ 记录来源
+        #   Agents      → ＋ 添加 Agent（接入 Agent、记录来源 都已移进工作台）
         #   技能        → ＋ 导入 Skill
         #   主要项目    → 设置主要项目
         # 于是这一行会随页签整体变化，主条也终于不再挤成一团。
         self.act_bar = ttk.Frame(outer)
-        self.act_bar.pack(fill="x", pady=(0, 12))
+        self.act_bar.pack(fill="x", pady=(0, SP_4))
 
         # 栏内动作：一律用**实心近黑**的主操作样式（Act），
         # 与上一行的描边页签/「重新扫描」拉开「实心 vs 描边」的层级差。
+        # 第四十九轮（美化）：一行里只留**一个**主操作（实心）——
+        #   先前「＋ 添加 Agent」与「接入 Agent」都是实心，谁都不是主
         self.btn_add = ttk.Button(self.act_bar, text="＋ 添加 Agent",
-                                  style="Act.TButton",
+                                  style="Tab.TButton",
                                   command=self.add_agent_dialog)
-        self.btn_roots = ttk.Button(self.act_bar, text="记录来源",
-                                    style="Tab.TButton",
-                                    command=self.record_sources_dialog)
-        self.btn_onboard = ttk.Button(self.act_bar, text="接入 Agent",
-                                      style="Act.TButton",
-                                      command=self.onboard_dialog)
+        # 第六十轮（爱卿令）：「记录来源」撤除 —— 内容已在各 Agent 的工作台
+        # 第五十九轮（爱卿令）：「接入 Agent」搬进各 Agent 的工作台，本栏不再放
         self.btn_skill = ttk.Button(self.act_bar, text="＋ 导入 Skill",
                                     style="Act.TButton",
                                     command=self.import_skill_dialog)
@@ -2562,7 +2885,7 @@ class App(tk.Tk):
         self._refresh_actions()
 
     ACTIONS = {
-        "agents": ("btn_add", "btn_onboard", "btn_roots"),
+        "agents": ("btn_add",),                 # 接入 Agent / 记录来源 都已移入工作台
         "skills": ("btn_skill",),
         "tasks": ("btn_proj",),
     }
@@ -2649,12 +2972,22 @@ class App(tk.Tk):
         try:
             if not c.winfo_exists():
                 return False
-            return bar.winfo_reqwidth() > c.winfo_width() + 1
+            w = c.winfo_width()
+            if w <= 1:                      # 还没轮到布局，用外框的宽度顶上
+                w = getattr(self, "bar_holder", c).winfo_width()
+            return bar.winfo_reqwidth() > w + 1
         except Exception:
             return False
 
-    def _bar_update_scroll(self):
-        """装得下就把滚动条收起，装不下才露出来 —— 免得白占一行。"""
+    def _bar_update_scroll(self, _retry=True):
+        """装得下就把滚动条收起，装不下才露出来 —— 免得白占一行。
+
+        2026-09-20（UI 美化）：补一次**延迟复判**。启动的那一瞬，工具条与画布
+        都还没量出真实宽度（winfo_width 报 1），此时算出来的「装不下」是假的，
+        滚动条就这么被挂上去了 —— 而 <Configure> 只来一次，于是那根多余的灰条
+        一直挂在那儿，静静占掉一行。今隔一拍再判一次，判完即止（只补一次，
+        不会自己叫自己）。
+        """
         c = getattr(self, "bar_canvas", None)
         hsb = getattr(self, "bar_hsb", None)
         if c is None or hsb is None or not c.winfo_exists():
@@ -2669,11 +3002,16 @@ class App(tk.Tk):
             else:
                 if hsb.winfo_ismapped():
                     hsb.pack_forget()
-                c.xview_moveto(0)
+            c.xview_moveto(0)
         except Exception:
             pass
         finally:
             self._bar_sb_busy = False
+        if _retry:
+            try:
+                self.after(160, lambda: self._bar_update_scroll(False))
+            except Exception:
+                pass
 
     def _pointer_in_bar(self):
         """指针此刻是否压在工具条上。"""
@@ -2735,7 +3073,7 @@ class App(tk.Tk):
             for key, btn in getattr(self, "tab_btns", {}).items():
                 if self._cat_has_content(key):
                     if not btn.winfo_ismapped():
-                        btn.pack(side="left", padx=(0, 6))
+                        btn.pack(side="left", padx=(0, SP_1))
                 else:
                     btn.pack_forget()
             # 当前页签若已被隐去，退到第一个尚存的
@@ -2746,8 +3084,8 @@ class App(tk.Tk):
                         break
             # 更新页签样式（当前项高亮）
             for key, btn in getattr(self, "tab_btns", {}).items():
-                btn.configure(style="TabOn.TButton" if key == self.cat
-                              else "Tab.TButton")
+                btn.configure(style="NavOn.TButton" if key == self.cat
+                              else "Nav.TButton")
             # 页签增减会改内条宽度，滚动区跟着重算
             self._bar_sync_region()
             # 当前页签若被隐去，cat 会退到别处 —— 动作行也得跟着换
@@ -3433,7 +3771,7 @@ class App(tk.Tk):
 
     # ---------- 列表 ----------
     def _build_list(self):
-        outer = ttk.Frame(self, padding=(26, 0, 26, 0))
+        outer = ttk.Frame(self, padding=(PAGE_X, 0, PAGE_X, 0))
         outer.pack(fill="both", expand=True)
 
         self.canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, bd=0)
@@ -3452,7 +3790,8 @@ class App(tk.Tk):
         self.canvas.bind_all("<Shift-MouseWheel>", self._on_shift_wheel)
 
         self.status = ttk.Label(self, text="", style="Faint.TLabel",
-                                font=("Microsoft YaHei UI", 9), padding=(28, 6, 28, 12))
+                                font=("Microsoft YaHei UI", 9),
+                                padding=(PAGE_X, SP_2, PAGE_X, SP_3))
         self.status.pack(fill="x")
 
     def _on_canvas_resize(self, e):
@@ -3515,7 +3854,7 @@ class App(tk.Tk):
             shelves = {}
             for s in self.data.get("skill_shelves", []):
                 shelves.setdefault(s.get("entry"), []).append(s.get("shelf"))
-            for s in self.data.get("skills", []):
+            for s in [x for x in self.data.get("skills", []) if not x.get("hidden")]:
                 tags = [s.get("source") or ""]
                 if s.get("version"):
                     tags.append("v" + str(s["version"]))
@@ -3659,7 +3998,16 @@ class App(tk.Tk):
                          text="本机一台 Agent 也没检出。\n"
                               "请点「重新扫描」重试，或用「＋ 添加 Agent」手动导入。",
                          bg=BG, fg=FAINT, justify="center",
-                         font=("Microsoft YaHei UI", 10)).pack(pady=(0, 18))
+                         font=("Microsoft YaHei UI", 10)).pack(pady=(0, 8))
+                # 第五十二轮（照 redesign-skill 审）：空状态别只说"没有"，
+                #   还要说清**它是怎么找的** —— 新电脑上用户才知道该往哪儿看。
+                tk.Label(self.inner,
+                         text=u"它会找这几处：\n"
+                              u"· 内置登记表 + 桌面/开始菜单快捷方式 + 按特征名全盘寻真身\n"
+                              u"· 按特征自动发现（有 MCP 配置 / skills 目录 / AGENTS.md 的目录）\n"
+                              u"· 你手工加过的（「＋ 添加 Agent」存在 %LOCALAPPDATA%）",
+                         bg=BG, fg=FAINT, justify="left",
+                         font=("Microsoft YaHei UI", 9)).pack(pady=(0, 18))
                 _row = ttk.Frame(self.inner)
                 _row.pack()
                 ttk.Button(_row, text="重新扫描", style="Tab.TButton",
@@ -3699,11 +4047,11 @@ class App(tk.Tk):
         is_agents = (self.cat == "agents")
 
         cw = self.canvas.winfo_width()
-        cols = max(1, cw // _px(430)) if cw > 1 else 2
+        cols = self._cols_for(cw)
         if GlassCard is None:
             cols = max(1, cw // _px(340)) if cw > 1 else 3
-        for c in range(cols):
-            self.inner.columnconfigure(c, weight=1, uniform="card")
+        self._setup_columns(cols)
+        card_size = self._card_size(cw, cols)
 
         n = len(self.rows)
         nrow = (n + cols - 1) // cols
@@ -3718,16 +4066,16 @@ class App(tk.Tk):
                 else:
                     liquid = cat_liquid(self.cat, i)
                 cell = GlassCard(self.inner, liquid=liquid,
-                                 size=(_px(400), _px(172)), fill_ratio=0.58)
+                                 size=card_size, fill_ratio=0.58)
                 self._fill_glass(cell, r, is_agents, LIMIT_DESC, LIMIT_META)
             else:
                 cell = self._plain_card(r, is_agents, LIMIT_DESC, LIMIT_META)
             cell.grid(row=grow, column=i % cols, sticky="nsew",
-                      padx=7, pady=(14, 0))
+                      padx=SP_2, pady=(0, 0))
 
         # 行间只留空白间隔，**不铺搁板横线**（爱卿明令去掉那些灰横线）
         for k in range(nrow - 1):
-            gap = tk.Frame(self.inner, bg=BG, height=16)
+            gap = tk.Frame(self.inner, bg=BG, height=SP_4)
             gap.grid(row=k * 2 + 1, column=0, columnspan=cols, sticky="ew")
 
         if is_agents:
@@ -3739,6 +4087,54 @@ class App(tk.Tk):
             self.status.configure(text="共 %d 项。" % len(self.rows))
         self._render_hist_hits(self.var_q.get().strip().lower())
         self.canvas.yview_moveto(0)
+
+    def _cols_for(self, cw):
+        """按画布宽定列数。
+
+        第五十三轮（爱卿令：回到一行两张）—— 原式 `cw // _px(430)` 有个缝：
+        本应用允许的最小窗宽是 900（逻辑像素），而「两列」需要
+        2×430 + 左右留白 ≈ 965 —— 于是窗口一旦被记成最小尺寸，画布宽就
+        差着 3% 掉到 1 列，卡片瞬间涨成一张巨卡（开窗第一帧还看不出，
+        因为那时画布还没量出宽、走的是兜底两列）。故留 5% 容差：
+        差不到 5% 仍按两列排，别把两列挤成一列。
+        """
+        per = _px(430)
+        if cw <= 1:
+            return 2                      # 画布还没量出来，先按两列兜底
+        cols = max(1, cw // per)
+        if cols == 1 and cw >= per * 2 * 0.95:
+            cols = 2
+        return cols
+
+    def _setup_columns(self, cols, maxc=8):
+        """排网格前先把列属性**全部复位**，再按本次列数重设。
+
+        上一次若排过两列，第二列身上还留着 `weight=1, uniform='card'`；
+        本次只排一列时，那一列虽然空着，`uniform` 仍会把它算进来，把仅存的
+        这一列也拽成半宽 —— 于是卡片怎么设都不对：实测声明 1228 宽的卡，
+        被网格塞进了 602 的格子里（改版时踩到的真事，量了半天才揪出来）。
+        复位一行，从此不会再被上一轮的排版牵着走。
+        """
+        for c in range(maxc):
+            try:
+                self.inner.columnconfigure(c, weight=0, uniform="")
+            except Exception:
+                pass
+        for c in range(cols):
+            self.inner.columnconfigure(c, weight=1, uniform="card")
+
+    def _card_size(self, cw, cols):
+        """卡片该多大：**铺满自己那一格**。
+
+        从前是写死 400（逻辑像素）：双列时每格比它宽，卡片右边空出一条；单列时
+        更明显，右边空掉一大半、看着像没排完版。今按「画布宽 ÷ 列数 − 格内两侧
+        留白」算 —— 两列也好、单列也好，都把格子填满；窄窗上它就是一行一条的
+        名册列表。留 330 的下限，免得算成负数或细条。
+        """
+        w = _px(400)
+        if cw > _px(460):
+            w = max(_px(330), cw // max(1, cols) - SP_2 * 2)
+        return (w, _px(172))
 
     # ---------- 取色 ----------
     def _agent_color(self, row):
@@ -3759,13 +4155,38 @@ class App(tk.Tk):
         return col
 
     # ---------- 卡片里的内容 ----------
+    def _desc_budget(self, wraplen):
+        """按真实像素宽度算：**两行**装得下多少个「显示宽度单位」。
+
+        为什么非量不可：卡片宽度是活的（宽窗双列各半、窄窗单列铺满），字号又受
+        DPI 缩放影响 —— 无论写死「88 个字」还是「100 个单位」，都只是猜，猜大了
+        就有一行字从卡里爬出来压到底下的路径行上（改版前正是如此）。
+        这里用 tkinter 自己的字体度量量一次「永」字宽（结果缓存），
+        再拿折行宽度去除 —— 量出来的才作数。
+        """
+        try:
+            if getattr(self, "_unit_px", None) is None:
+                import tkinter.font as _tkfont
+                _f = _tkfont.Font(font=F_CARD_D)
+                # 一个全角字 = 2 个单位，故 1 个单位 = 半个字宽
+                self._unit_px = max(5.0, float(_f.measure(u"\u6c38")) / 2.0)
+            return max(24, int(wraplen / self._unit_px) * 2 - 4)
+        except Exception:
+            return DESC_UNITS
+
     def _fill_glass(self, glass, r, is_agents, LIMIT_DESC, LIMIT_META):
         """往白卡里铺文字与图标。左边留出彩色竖条的位置。"""
         glass.clear_content()
-        pad = _px(22)                               # 竖条之后再起文字
-        inner = glass._cw - pad - _px(16)
+        # ---- 卡内垂直节奏（改版前是 10 / 38 / 39 / 78 / 133 一组手写数字，
+        #      各行间距 顺 眼 但 不 齐；今按 4 的倍数重排，两列卡片由此严格同高同线）----
+        pad = SP_5                                  # 竖脊之后再起文字（20）
+        inner = glass._cw - pad - SP_4
         col = glass.liquid
         accent = darken_hex(col, 0.34)              # 文字用色：主色压深，保证可读
+        Y_CHIP = SP_3                               # 顶部小标签
+        Y_ICON = _px(42)                            # 图标与标题同一顶线
+        Y_DESC = _px(80)                            # 描述两行
+        Y_FOOT = _px(132)                           # 路径 / 备注一行
 
         # 顶部小标签（种类 / 来源）
         kind = r.get("extra", "") if is_agents else (
@@ -3773,7 +4194,7 @@ class App(tk.Tk):
         if kind:
             chip = tk.Label(glass, text=" " + self._shorten(kind, 14) + " ",
                             bg=SOFT, fg=accent, font=F_TAG)
-            glass.add_content(chip, pad, _px(10))
+            glass.add_content(chip, pad, Y_CHIP)
 
         # 图标（仅 Agents 栏）
         has_icon = False
@@ -3782,28 +4203,39 @@ class App(tk.Tk):
             if ic:
                 lab = tk.Label(glass, bg=CARD, image=ic, bd=0)
                 glass._icon_ref = ic
-                glass.add_content(lab, pad, _px(38))
+                glass.add_content(lab, pad, Y_ICON + _px(2))
                 has_icon = True
 
         # 标题（加粗、放大）
         tx = pad + _px(46) if has_icon else pad
-        ty = _px(39) if has_icon else _px(36)
         title = tk.Label(glass, text=self._shorten(r["title"], 20), bg=CARD, fg=FG,
                          anchor="w", justify="left", font=F_CARD_T)
-        glass.add_content(title, tx, ty, width=glass._cw - tx - _px(16),
-                          height=_px(32))
+        glass.add_content(title, tx, Y_ICON, width=glass._cw - tx - SP_4,
+                          height=_px(30))
 
         # 描述：**自订简介优先**（爱卿可编辑），没写才退回扫描到的说明。
-        # 三行封顶；留出右上角编辑入口的位置，免得文字压到它底下。
-        # 描述：**自订简介优先**（没写才退回扫描到的说明）。
         # 第二十三轮：卡上不再摆编辑入口 —— 编辑挪进「点进来的详情页」，
         # 卡片恢复原高度与原宽度，简介在这儿只作展示。
         # 注意：Tk 的 Label 不给 wraplength 就**不会折行**，只会单行截断。
+        #
+        # 2026-09-20（美化）：**溢出治本**。卡片高是死的（172），描述从前按
+        #   「88 个字」截 —— 那是按字数算的，88 个汉字排下来是四行，比留给它的
+        #   两行整整多出一倍，多出来的字就压到底下那行路径上去（改版前的原病）。
+        #   今改两处：① 按**显示宽度**截（clip_units，全角算 2 个单位），
+        #             ② Label 直接钉死 height=2 行，多一个字也不许爬出来。
         intro = (r.get("intro") or "") if is_agents else ""
-        desc = tk.Label(glass, text=self._shorten(intro or r["desc"], 200), bg=CARD,
-                        fg=FG if intro else DIM, anchor="nw", justify="left",
-                        font=F_CARD_D, wraplength=max(_px(120), inner - _px(6)))
-        glass.add_content(desc, pad, _px(78), width=inner, height=_px(50))
+        wraplen = max(_px(120), inner - _px(4))
+        desc = tk.Label(glass,
+                        text=clip_units(intro or r["desc"],
+                                        self._desc_budget(wraplen)),
+                        bg=CARD, fg=FG if intro else DIM, anchor="nw",
+                        justify="left", height=2, font=F_CARD_D,
+                        wraplength=wraplen)
+        # 只给宽、**不给高**：让 Label 自己按「两行」定高。
+        # 从前这里钉了 height=_px(46) —— 本意是「留两行的地方」，可 _px(46) 在
+        # 150% 缩放屏上是 69px，而两行文字只要 60px，多出来的 9px 正好够第三行
+        # 探出头来。宽度交给外面、高度交给字体，两边就不会打架。
+        glass.add_content(desc, pad, Y_DESC, width=inner)
 
         # 名下挂着工作区散件者，在标题右上角缀一枚小徽标，提示「点开有东西看」
         n_works = len((r.get("agent") or {}).get("works") or []) \
@@ -3818,16 +4250,17 @@ class App(tk.Tk):
                 _mcp_on = bool(it.get("mcp"))
                 _mcp_full = _mcp_on and bool(it.get("mcp_trusted", True))
                 # 灯可点（第四十七轮）：每盏灯连到该管的那个窗 ——
-                #   记录 → 记录来源 ｜ 人格 → 接入 Agent ｜ MCP → MCP 状态
+                #   记录 → 工作台 ｜ 人格 → 接入 Agent ｜ MCP → MCP 状态
                 #   （第四十八轮去掉了「地址」灯：那是手段，不是结果）
                 _ag = r.get("agent") or {}
                 _acts = {
-                    u"记录": lambda a=_ag: self.record_sources_dialog(),
-                    u"人格": lambda a=_ag: self.onboard_dialog(),
+                    # 第六十轮：记录灯改开**这个 Agent 的工作台**（记录都长在哪、点即开）
+                    u"记录": lambda rr=r: self.open_workspace(rr),
+                    u"人格": lambda a=_ag: self.onboard_dialog(a),
                     "MCP": lambda a=_ag: self.mcp_status_dialog(a),
                 }
                 _tips = {
-                    u"记录": u"点开「记录来源」：本机的记录都长在哪、可清理重复副本",
+                    u"记录": u"点开这个 Agent 的工作台：它的记录都长在哪些位置，点路径即开",
                     u"人格": u"点开「接入 Agent」：接 MCP、放「每轮先查再答」指针、取自检提示词",
                     "MCP": u"点开「MCP 状态」：它的 MCP 配置在哪、注册了没、要不要在客户端里受信",
                 }
@@ -3839,42 +4272,60 @@ class App(tk.Tk):
                         (u"人格", bool(it.get("persona")), False),
                         ("MCP", _mcp_full, _mcp_on and not _mcp_full)):
                     glyph = u"●" if on else (u"◐" if half else u"○")
+                    # 壳底去掉（先前套浅灰底框，比设计吵）；亮灯用主色，暗灯用弱色
                     lb = tk.Label(row, text=u"%s %s" % (glyph, nm),
-                                  bg=SOFT if on else CARD,
+                                  bg=CARD,
                                   fg=accent if on else FAINT,
-                                  font=F_TAG, padx=_px(4), pady=_px(1),
+                                  font=F_TAG, padx=_px(2), pady=_px(1),
                                   cursor="hand2")
                     lb.pack(side="left", padx=(0, _px(3)))
                     lb.bind("<Button-1>",
                             lambda _e, f=_acts[nm]: (f(), "break")[1])
                     self._tip(lb, _tips[nm])
-                glass.add_content(row, glass._cw - _px(16), _px(12), anchor="ne")
                 if n_works:
-                    b2 = tk.Label(glass, text=u" 工作 %d 件 " % n_works,
-                                  bg=SOFT, fg=accent, font=F_TAG)
-                    glass.add_content(b2, glass._cw - _px(18), _px(40), anchor="ne")
+                    # 「工作 N 件」并进同一行（先前挂在灯的下一行，孤零零的）
+                    tk.Label(row, text=u"· 工作 %d 件" % n_works, bg=CARD,
+                             fg=DIM, font=F_TAG, padx=_px(2)).pack(
+                                 side="left", padx=(_px(6), 0))
+                glass.add_content(row, glass._cw - SP_4, Y_CHIP - _px(2),
+                                  anchor="ne")
         elif n_works:
             badge = tk.Label(glass, text=" 工作 %d 件 " % n_works,
                              bg=SOFT, fg=accent, font=F_TAG)
-            glass.add_content(badge, glass._cw - _px(20), _px(14), anchor="ne")
+            glass.add_content(badge, glass._cw - SP_5, Y_CHIP - _px(2),
+                              anchor="ne")
         elif r.get("_members"):
             # 整合卡：右上角挂一枚同色徽标，与普通技能卡拉开距离
             badge = tk.Label(glass, text=" ★ 整合卡 · %d 篇 " % len(r["_members"]),
                              bg=SUITE_COLOR, fg="#ffffff", font=F_TAG)
-            glass.add_content(badge, glass._cw - _px(20), _px(14), anchor="ne")
+            glass.add_content(badge, glass._cw - SP_5, Y_CHIP - _px(2),
+                              anchor="ne")
 
         # 底部一行：路径（Agent 栏）或备注（其余栏）
+        # 第四十九轮：路径按「中间省略」缩写（保留盘符与末两级）——
+        #   先前整条铺满，右下角的「工作台 ›」提示会压在它上面，字尾巴从提示底下穿出去
         if is_agents:
-            foot = self._shorten(r["meta"], 70)
+            foot = self._elide_path(r["meta"], 66)
             ffont = F_MONO
             fc = FAINT
         else:
-            foot = self._shorten(r["meta"], 62)
+            # 掐掉尾上孤零零的分隔符 —— 有些 meta 本就是「… ｜ 记录 25 条 ｜ 」，
+            # 那个尾巴上的「｜」落在脚注里像没写完的半句话
+            foot = self._shorten(r["meta"], 62).rstrip(u" \uFF5C|\u00b7, ")
             ffont = F_MONO
             fc = FAINT
+        # 脚注之上拉一根发丝线：把「说明」与「出处」分开，卡内立见结构。
+        # （用 1px 的 Frame 而不是画线 —— 画在画布上的东西，窗口一缩放就会被
+        #    redraw 抹掉；摆成内容控件才会跟着卡片一起重排。）
+        sep = tk.Frame(glass, bg=LINE, height=1, bd=0)
+        glass.add_content(sep, pad, Y_FOOT - _px(10), width=inner, height=1)
+
         fl = tk.Label(glass, text=foot, bg=CARD, fg=fc, anchor="w",
                       justify="left", font=ffont)
-        glass.add_content(fl, pad, _px(133), width=inner, height=_px(22))
+        # 让出右下角那枚提示的位置（76 而非 66 —— 先前「点击启动 ›」与路径尾巴
+        # 只差十几个像素，两列时看着要贴上了）
+        glass.add_content(fl, pad, Y_FOOT, width=inner - _px(76),
+                          height=_px(20))
 
         # 右下角那枚淡字：有工作台者写「工作台」，可启动者写「点击启动」，其余写「详情 ›」
         # （**不是按钮**，爱卿已令撤去按钮；此处只是文字暗示）
@@ -3888,8 +4339,8 @@ class App(tk.Tk):
             hint_text = "详情 ›"
         hint = tk.Label(glass, text=hint_text,
                         bg=CARD, fg=FAINT, anchor="e", font=F_HINT)
-        glass.add_content(hint, glass._cw - _px(22), _px(133), anchor="ne",
-                          height=_px(22))
+        glass.add_content(hint, glass._cw - SP_5, Y_FOOT, anchor="ne",
+                          height=_px(20))
 
         glass.redraw_all(0.0)
         glass._chip = None
@@ -3919,10 +4370,11 @@ class App(tk.Tk):
         """没有卡片控件时，退化为白底卡片，绝不空窗。"""
         base_col = self._agent_color(r) if is_agents else cat_liquid(self.cat, 0)
         accent = darken_hex(base_col, 0.34)
-        cell = tk.Frame(self.inner, bg=CARD, highlightbackground=LINE,
+        cell = tk.Frame(self.inner, bg=CARD, highlightbackground=EDGE,
                         highlightthickness=1, bd=0)
-        # 左缘一道主色竖条
-        tk.Frame(cell, bg=base_col, width=6).pack(side="left", fill="y")
+        # 左缘一道主色竖脊（与主卡片同为 4px，两种卡不打架）
+        tk.Frame(cell, bg=base_col, width=max(3, int(4 * UI_SCALE))).pack(
+            side="left", fill="y")
         pad = tk.Frame(cell, bg=CARD)
         pad.pack(side="left", fill="both", expand=True, padx=14, pady=12)
 
@@ -3937,9 +4389,10 @@ class App(tk.Tk):
         tk.Label(top, text=self._shorten(r["title"], 20), bg=CARD, fg=FG,
                  anchor="w", font=F_CARD_T).pack(side="left", padx=(8, 0))
 
-        tk.Label(pad, text=self._shorten(r["desc"], 130), bg=CARD, fg=DIM,
-                 anchor="w", justify="left", wraplength=_px(360),
-                 font=F_CARD_D).pack(fill="x", pady=(8, 0))
+        tk.Label(pad, text=clip_units(r["desc"], self._desc_budget(_px(360))),
+                 bg=CARD, fg=DIM, anchor="w", justify="left", height=2,
+                 wraplength=_px(360), font=F_CARD_D).pack(fill="x",
+                                                          pady=(SP_2, 0))
 
         foot = self._shorten(r["meta"], 62) if not is_agents else \
             self._shorten(r["meta"], 70)
@@ -4230,98 +4683,8 @@ class App(tk.Tk):
         return dlg
 
     # ---------- 详情窗 ----------
-    # ---------- 更新数据：开本体 + 给一段可复制的提示词 ----------
-    def _works_dir_of(self, row):
-        """该 Agent 的工作记录夹。扫描器已建好并写在 agent 里；没有就按名字推。"""
-        agent = row.get("agent") or {}
-        d = agent.get("works_dir") or ""
-        if d:
-            return d
-        nm = re.sub(r'[\\/:*?"<>|]', "_", (row.get("title") or "未命名").strip())
-        return os.path.join(HERE, "通用资源", "工作记录", nm)
-
-    def _update_data(self, row):
-        """「整理记录」：打开该 Agent，并弹置顶悬浮窗摆好提示词供复制。
-
-        记录仍落在本应用给它留的那格（通用资源\工作记录\<Agent>）—— 那一格
-        是**就地索引**的一个记录根，所以整理完点「重新扫描」就即刻可搜、可见。
-        """
-        agent = row.get("agent") or {}
-        name = row.get("title") or agent.get("name") or ""
-        folder = self._works_dir_of(row)
-        try:
-            os.makedirs(folder, exist_ok=True)
-        except Exception:
-            pass
-        prompt = ("请把「我与你这次（以及之前未归档的）工作」整理成记录，"
-                  "存进这个文件夹 —— 本应用专门给各个 Agent 存工作记录的那一格：\n\n"
-                  "%s\n\n"
-                  "要求：每条记录单独成文件（或按项目分文件夹），文件名写清是什么；"
-                  "每条里写清**日期、干了什么、结论/决定、产物完整路径**。"
-                  "整理完回到「Agent 资产总览」，点「重新扫描」，"
-                  "这些稿子会出现在「工作台 · %s」里。\n\n"
-                  "为什么值得整理：应用的检索现在**直接读你的原始日志**（不再抄副本），"
-                  "所以不整理也能搜到；但整理稿能让人一眼看出「哪天、做了什么、结论、产物在哪」。"
-                  "「主要项目」里的『已实现的功能』和『开发日志』正是从整理稿里摘出来的 —— "
-                  "原始会话实录与记忆噪音太大，会被跳过。" % (folder, name))
-        self._prompt_float(name, prompt, folder)
-        if agent.get("exe"):
-            self.start_agent(agent)          # 直接打开对应 agent 的界面
-        else:
-            self.status.configure(text="这个 Agent 没有可启动的程序，已只给你提示词。")
-
-    def _prompt_float(self, name, text, folder):
-        """置顶悬浮窗：一段现成的提示词，配「复制 / 打开工作记录夹 / 关闭」。"""
-        win = tk.Toplevel(self)
-        win.title("更新数据 · 提示词")
-        win.configure(bg=BG)
-        try:
-            win.attributes("-topmost", True)     # 置顶，好让你边看边粘
-        except Exception:
-            pass
-        w, h = self._fit(_px(680), _px(330))
-        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        win.geometry("%dx%d+%d+%d" % (w, h, max(0, sw - w - 40), 60))
-        pad = ttk.Frame(win, padding=(16, 14))
-        pad.pack(fill="both", expand=True)
-        ttk.Label(pad, text="把下面这段粘给「%s」" % name, style="TLabel",
-                  font=("Microsoft YaHei UI", 12, "bold")).pack(anchor="w")
-        ttk.Label(pad, text="它照着办，就把工作记录整理进本应用为它留的那格文件夹。",
-                  style="Hint.TLabel",
-                  font=("Microsoft YaHei UI", 9)).pack(anchor="w", pady=(2, 8))
-
-        # 底栏先占底（同编辑窗的道理，否则按钮会被正文挤没）
-        foot = ttk.Frame(pad)
-        foot.pack(side="bottom", fill="x", pady=(10, 0))
-        body = tk.Frame(pad, bg=BG)
-        body.pack(fill="both", expand=True)
-        txt = tk.Text(body, wrap="word", bg="#ffffff", fg=FG, relief="flat", bd=0,
-                      highlightthickness=1, highlightbackground=LINE, height=8,
-                      font=("Microsoft YaHei UI", 10), padx=12, pady=10)
-        sb = ttk.Scrollbar(body, orient="vertical", command=txt.yview)
-        txt.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        txt.pack(side="left", fill="both", expand=True)
-        txt.insert("1.0", text)
-
-        def do_copy():
-            try:
-                win.clipboard_clear()
-                win.clipboard_append(text)
-                win.update_idletasks()
-                self.status.configure(text="提示词已复制到剪贴板。")
-            except Exception:
-                self.status.configure(text="复制未成（剪贴板不可用）。")
-
-        ttk.Button(foot, text="复制提示词", style="Tab.TButton",
-                   command=do_copy).pack(side="left")
-        ttk.Button(foot, text="打开工作记录夹", style="Tab.TButton",
-                   command=lambda: self.open_path(folder)).pack(side="left", padx=(6, 0))
-        ttk.Button(foot, text="关 闭", style="Tab.TButton",
-                   command=win.destroy).pack(side="right")
-        txt.focus_set()
-        win.bind("<Escape>", lambda _e: win.destroy())
-        return win
+    # 第五十五轮（爱卿令）：_works_dir_of / _update_data / _prompt_float
+    #   随「应用内一格工作记录夹」整体删除 —— 本体的东西就地读，不收进应用。
 
     # ---------- 详情页顶部的「简介栏」 ----------
     def _intro_bar(self, parent, row):
@@ -4403,16 +4766,63 @@ class App(tk.Tk):
                     pass
 
     # ---------- 工作台：WorkBuddy 名下的工作区散件 ----------
-    def open_workspace(self, row):
-        """打开某个 Agent 的「工作台」：把它名下的工作文件全数摊开。
+    def _record_roots_of(self, agent):
+        """该 Agent 的**原生记录根**（通配已展开）—— 就地读的来源。
 
-        爱卿之意（第十五轮）——「把工作区的所有项目文件地址统一放到与你的名字
-        对应的 WorkBuddy 那个 Agent 的页面下，别的 Agent 想接力时一看便知」。
-        故此窗既是**清单**（文件地址一眼看全），也是**入口**（点开即读 / 即开目录），
-        底下另备「启动本体」一枚，观其工作毕，仍可启其人。
+        第五十五轮（爱卿令）：应用内那格工作记录夹已废，记录一律直接从这儿读。
+        """
+        out = []
+        try:
+            mod = self._scanner_mod()
+            roots = mod.record_roots_of(agent) if mod else []
+        except Exception:
+            roots = []
+        for r in (roots or []):
+            if r.get("mode") not in ("direct", "digest"):
+                continue
+            p = r.get("root") or ""
+            if not p:
+                continue
+            if any(c in p for c in "*?["):
+                hits = []
+                try:
+                    hits = mod._expand_roots(p)
+                except Exception:
+                    try:
+                        hits = glob.glob(p)
+                    except Exception:
+                        hits = []
+                out.extend([h for h in (hits or []) if h])
+            else:
+                out.append(p)
+        return out
+
+    def _agent_home(self, agent):
+        """这个 Agent **本体所在的目录**（取代原先那格工作记录夹）。
+
+        先取可执行文件所在目录；没有可执行文件时，退回它第一个原生记录根。
+        """
+        exe = (agent or {}).get("exe") or ""
+        if exe:
+            d = os.path.dirname(exe)
+            if d and os.path.isdir(d):
+                return d
+        for r in self._record_roots_of(agent):
+            if r and os.path.isdir(r):
+                return r
+        return ""
+
+    def open_workspace(self, row):
+        """打开某个 Agent 的「工作台」：本体在哪、记录都长在哪些位置。
+
+        第五十六轮（爱卿令）——按钮收成两枚，地址清单常态摊开：
+          · 「打开本体目录」：一键开这个 Agent 所在的**总目录**；
+          · 「手动添加」：把原〔＋添加检索地址〕与〔复制自报家门问话〕并成一处
+            （本就是同一件事：不认识它的目录结构时，让 Agent 自己把位置报出来），
+            点开即摊开一层提示 —— 可复制的提示词 + 「选择目录加入…」。
+        清单**不再区分内置 / 手工**：都是它记录所在之处，一律就地读、不复制。
         """
         agent = row.get("agent") or {}
-        works = agent.get("works") or []
 
         win = tk.Toplevel(self)
         win.title("工作台 · %s" % agent.get("name", ""))
@@ -4436,7 +4846,13 @@ class App(tk.Tk):
                  font=F_DLG_T, anchor="w").pack(side="left")
         tk.Label(head, text="本 Agent 在本机的工作区文件", bg=SOFT, fg=INFO,
                  font=F_TAG).pack(side="left", padx=(10, 0))
-        # 右上角：说明这一页的记录是怎么来的（爱卿指定的位置）
+        # 第五十四轮（爱卿令）：启动键在页头，紧挨标题那一行。
+        if agent.get("exe"):
+            ttk.Button(head, text="启动 %s" % agent.get("name", ""),
+                       style="Tab.TButton",
+                       command=lambda a=agent: self.start_agent(a)
+                       ).pack(side="left", padx=(16, 0))
+        # 右上角：说明这一页的记录是怎么来的
         tk.Label(head,
                  text=self._integration_line(agent),
                  bg=BG, fg=FAINT, font=F_HINT, justify="right"
@@ -4445,42 +4861,34 @@ class App(tk.Tk):
         # 顶部：同一段简介再显示一份
         self._intro_bar(win, row)
 
-        tk.Label(win, text="工作区：%s" % (agent.get("works_dir") or HERE),
+        tk.Label(win, text="本体目录：%s"
+                 % (self._agent_home(agent) or "（未登记可执行文件）"),
                  bg=BG, fg=FAINT, font=F_MONO, anchor="w"
                  ).pack(fill="x", padx=22, pady=(2, 10))
 
-        # 工具条：开目录 / 复制清单 / 启动本体
+        # 工具条：只留「打开本体目录」「手动添加」（第五十六轮）
         bar = tk.Frame(win, bg=BG)
         bar.pack(fill="x", padx=22, pady=(0, 8))
-        ttk.Button(bar, text="打开工作区目录", style="Tab.TButton",
-                   command=lambda: self.open_path(agent.get("works_dir") or HERE)
+        ttk.Button(bar, text="打开本体目录", style="Tab.TButton",
+                   command=lambda: self.open_path(self._agent_home(agent) or HERE)
                    ).pack(side="left")
-        ttk.Button(bar, text="复制文件清单", style="Tab.TButton",
-                   command=lambda: self._copy_works(works)
-                   ).pack(side="left", padx=(6, 0))
-        # 第四十四轮（爱卿之策）：让 Agent 自报家门，把路径粘进这里 ——
-        # 那一处即纳入主动检索，比程序去猜各家目录结构靠谱。
-        ttk.Button(bar, text="检索地址", style="Tab.TButton",
-                   command=lambda a=agent: self.record_paths_dialog(a)
-                   ).pack(side="left", padx=(6, 0))
-        if agent.get("exe"):
-            ttk.Button(bar, text="启动 %s" % agent.get("name", ""),
-                       style="Tab.TButton",
-                       command=lambda a=agent: self.start_agent(a)
-                       ).pack(side="left", padx=(6, 0))
-        # 第三十八轮（爱卿问：这功能是不是可以不要了）：**留着，但改定位** ——
-        # 就地索引之后，原始日志本来就能搜到，故它不再是「让记录能被找到」，
-        # 而是「让记录更好用」：整理稿是「已实现的功能」与「项目全貌」的原料，
-        # 原始会话实录噪音太大，摘录时会被跳过。
-        # 第四十轮（爱卿问：整理记录还需要吗）—— **撤掉按钮**。
-        #   实测：Agent 自己写的会话记忆质量与整理稿相当，而它**不用请就写**；
-        #   就地索引又already把它当记录读，故这一步纯属多余。
-        #   `self._update_data` 保留未删（它生成的那段提示词仍有价值：
-        #   想让人/Agent 写一份整理稿时，随时可以在对话里直接说）。
+        _add_btn = ttk.Button(bar, text="手动添加检索地址", style="Act.TButton",
+                              command=lambda: toggle_add())
+        _add_btn.pack(side="left", padx=(6, 0))
+        self._tip(_add_btn, u"添加记忆信息供其他 agent 浏览")
+        # 第五十九轮（爱卿令）：从首页搬过来的「接入 Agent」，在这儿只办这一个
+        _onb_btn = ttk.Button(bar, text="接入 Agent", style="Tab.TButton",
+                              command=lambda: self.onboard_dialog(agent))
+        _onb_btn.pack(side="left", padx=(6, 0))
+        self._tip(_onb_btn, u"只给这个 Agent：接 MCP 检索、在它每次必读处放一行指针，"
+                            u"并给你可复制的测试提示词")
         ttk.Button(bar, text="关闭", style="Tab.TButton",
                    command=win.destroy).pack(side="right")
 
-        # 正文（可滚动清单）
+        # 第五十六轮：「手动添加」那一层提示留个空框在这儿，展开时才长东西
+        hint_box = tk.Frame(win, bg=BG)   # 先不占位：摊开提示时才 pack 到工具条下面
+
+        # 正文（可滚动清单）—— 常态摊开，不再收 / 放
         body = tk.Frame(win, bg=BG)
         body.pack(fill="both", expand=True, padx=22, pady=(0, 16))
         txt = tk.Text(body, wrap="word", bg=CARD, fg=FG, bd=0,
@@ -4496,104 +4904,255 @@ class App(tk.Tk):
         txt.tag_configure("name", font=F_DLG_M, foreground=FG)
         txt.tag_configure("meta", font=F_HINT, foreground=FAINT)
         txt.tag_configure("role", font=F_TAG, foreground=INFO)
-        txt.tag_configure("link", font=F_DLG_M, foreground=INFO, underline=True)
+        txt.tag_configure("link", font=F_DLG_M, foreground=INFO, underline=True,
+                          lmargin1=_px(20), lmargin2=_px(20))
         txt.tag_configure("desc", font=F_DLG, foreground=DIM, lmargin1=20, lmargin2=20)
+        # 第五十八轮（爱卿令：美化这一栏）—— 原先 h2 / sub / sessT / sessLab / hair
+        #   一个都没配样式，标题、路径、备注、分隔线全落回默认字体与纯黑，
+        #   层级看不出来、线也太重。今按「标题—路径—备注」三级重排，
+        #   发丝线改用描边色，间距走 8 的倍数。
+        txt.tag_configure("h2", font=F_SEC, foreground=FG, spacing1=2, spacing3=2)
+        txt.tag_configure("h2n", font=F_HINT, foreground=FAINT, spacing1=2, spacing3=6)
+        txt.tag_configure("sub", font=F_DLG, foreground=DIM, spacing3=16)
+        txt.tag_configure("sessT", font=F_DLG_M, foreground=FG, spacing1=12, spacing3=4)
+        txt.tag_configure("sessLab", font=F_HINT, foreground=FAINT,
+                          lmargin1=_px(20), lmargin2=_px(20), spacing3=14)
+        txt.tag_configure("hair", font=F_HINT, foreground=LINE, spacing3=14)
 
-        if not works:
-            # 空工作台：把清单换成一句提示 + 一枚导入按钮（爱卿令）
-            txt.pack_forget()
-            bar2.pack_forget()
-            empty = tk.Frame(body, bg=BG)
-            empty.pack(fill="both", expand=True)
-            tk.Label(empty, text="未导入工作数据", bg=BG, fg=FG,
-                     font=("Microsoft YaHei UI", 13, "bold")).pack(pady=(56, 8))
-            tk.Label(empty,
-                     text="此 Agent 还没把工作记录交到本应用。\n"
-                          "点「导入工作数据」，本应用会打开它，并给你一段可直接粘贴的提示词，\n"
-                          "让它把记录整理到本应用给它留的那格文件夹里。",
-                     bg=BG, fg=FAINT, justify="center",
-                     font=("Microsoft YaHei UI", 10)).pack(pady=(0, 16))
-            tk.Label(empty, text="工作记录夹：%s" % (agent.get("works_dir") or ""),
-                     bg=BG, fg=FAINT, font=F_MONO).pack(pady=(0, 14))
-            ttk.Button(empty, text="导入工作数据", style="Tab.TButton",
-                       command=lambda rr=row: self._update_data(rr)).pack()
-            win.bind("<Escape>", lambda _e: win.destroy())
-            return win
+        line_map = {}       # 行号 → ("open", 路径)
+        manual_map = {}     # 行号 → 手工登记的路径（右键可移除）
 
-        line_map = {}
-
-        def open_at(idx):
-            if 0 <= idx < len(works):
-                w = works[idx]
-                p = w.get("path", "")
-                if w.get("role") == "工作区目录" or os.path.isdir(p):
-                    self.open_path(p)
-                else:
-                    self.open_file(p)
+        def _resolve(p2):
+            """带通配的地址（如 ~/WorkBuddy/*/.workbuddy/memory）→ 取一个真实位置。"""
+            if not p2:
+                return ""
+            if any(c in p2 for c in "*?["):
+                try:
+                    hits = sorted(glob.glob(p2))
+                    if hits:
+                        return hits[0]
+                except Exception:
+                    pass
+                return os.path.dirname(p2.split("*")[0].rstrip("\\/"))
+            return p2
 
         def on_click(_e):
+            """点任何一行路径 → 打开那个位置。"""
             try:
                 ln = int(str(txt.index("insert")).split(".")[0])
-                if ln in line_map:
-                    open_at(line_map[ln])
+                v = line_map.get(ln)
+                if isinstance(v, tuple) and v and v[0] == "open":
+                    t2 = _resolve(v[1])
+                    if t2 and os.path.isdir(t2):
+                        self.open_path(t2)
+                    elif t2 and os.path.isfile(t2):
+                        self.open_file(t2)
             except Exception:
                 pass
             return "break"
 
-        groups = [("工作区文件", "工作区里的源码、规格与脚本"),
-                  ("说明文档", "给使用者看的说明文稿"),
-                  ("工作区目录", "另有去处的目录（备份、便携数据等）")]
+        def on_rclick(_e):
+            """右键点在**手工登记**的那行 → 移除它（内置的删不了）。"""
+            try:
+                ln = int(str(txt.index("@%d,%d" % (_e.x, _e.y))).split(".")[0])
+            except Exception:
+                return "break"
+            p2 = manual_map.get(ln)
+            if p2:
+                remove_one(p2)
+            return "break"
 
-        for role, sub in groups:
-            items = [w for w in works if w.get("role") == role]
-            if not items:
-                continue
-            txt.insert("end", "\n%s（%d 件）　" % (role, len(items)), "h")
-            txt.insert("end", sub + "\n", "meta")
-            for w in items:
-                i = works.index(w)
-                line_map[int(str(txt.index("insert")).split(".")[0])] = i
-                # 名字那一行也算可点（目录条目尤其靠它 —— 目录无扩展名，
-                # 全靠这一行；文件条目则名字与路径两行皆可点）
-                txt.insert("end", "▸ ", "role")
-                txt.insert("end", w.get("name", "") + "\n", "name")
-                path = w.get("path", "")
-                line_map[int(str(txt.index("insert")).split(".")[0])] = i
-                txt.insert("end", "   " + path + "\n", "link")
-                if os.path.isdir(path):
-                    line_map[int(str(txt.index("insert")).split(".")[0])] = i
-                    txt.insert("end", "   " + ("（目录，点开即是）") + "\n", "link")
-                sz = w.get("size") or 0
+        def _row(label, path, note=u"", manual=u""):
+            """一行地址：标签 → 路径（点开即到）→ 备注 → 细线。"""
+            ln = int(str(txt.index("insert")).split(".")[0])
+            line_map[ln] = ("open", path)
+            if manual:
+                manual_map[ln] = manual
+            txt.insert("end", label + "\n", "sessT")
+            ln = int(str(txt.index("insert")).split(".")[0])
+            line_map[ln] = ("open", path)
+            if manual:
+                manual_map[ln] = manual
+            txt.insert("end", path + "\n", "link")
+            if note:
+                txt.insert("end", "  " + note + "\n", "sessLab")
+            txt.insert("end", "─" * 68 + "\n", "hair")
+
+        _key = ((agent or {}).get("key") or agent.get("name") or "").strip().lower()
+
+        def _reopen():
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self.open_workspace(row)
+
+        def _ask_text():
+            """给 Agent 的「自报家门」问话（有现成的 SKILL 就取那一段）。"""
+            try:
+                fp2 = os.path.join(HERE, u"通用资源", u"skills", u"agent-self-report",
+                                   u"SKILL.md")
+                t2 = open(fp2, encoding="utf-8").read()
+                i2 = t2.find(u"请只做一件事")
+                return t2[i2:] if i2 > 0 else t2
+            except Exception:
+                return (u"请只做一件事，不要做任何别的操作：如实告诉我，你自己的记忆/"
+                        u"会话记录/工作记录都存放在哪些目录（绝对路径、文件数、体量、"
+                        u"文本还是二进制）。不确定就说不确定，不要编。")
+
+        def copy_ask():
+            t2 = _ask_text()
+            self.clipboard_clear()
+            self.clipboard_append(t2)
+            self.status.configure(text=u"「自报家门」问话已复制 —— 粘给这个 Agent 试试。")
+
+        def add_addr():
+            import tkinter.filedialog as _fd
+            try:
+                _mod = self._scanner_mod()
+            except Exception:
+                return
+            p2 = _fd.askdirectory(parent=win, title=u"选这个 Agent 记忆/记录所在目录")
+            if not p2:
+                return
+            pr = _mod.probe_path(p2) or {}
+            mode = pr.get("suggest") or "direct"
+            if not messagebox.askyesno(
+                    u"加入检索",
+                    u"路径：%s\n\n探测：%s 个文件 ｜ %.2f MB\n主要格式：%s\n\n"
+                    u"建议处理：%s\n\n就按这个加入？"
+                    % (p2, pr.get("files", u"?"), (pr.get("bytes") or 0) / 1048576,
+                       u"、".join(u"%s×%d" % (e, n) for e, n in (pr.get("exts") or [])[:4]),
+                       u"摘录（体量大或不全是纯文本）" if mode == "digest" else u"直读"),
+                    parent=win):
+                return
+            d2 = _mod.load_extra_roots()
+            d2.setdefault(_key, []).append({
+                "path": p2, "mode": mode,
+                "name": os.path.basename(p2.rstrip("\\/")) or p2})
+            _mod.save_extra_roots(d2)
+            _mod.invalidate_roots()
+            self.status.configure(text=u"已登记检索地址：%s（%s）" % (p2, mode))
+            _reopen()
+
+        def remove_one(path):
+            """只删手工登记的那条（内置的由扫描器管，这里不动）。"""
+            try:
+                _mod = self._scanner_mod()
+                d2 = _mod.load_extra_roots()
+            except Exception:
+                return
+            lst = d2.get(_key) or []
+            hit = None
+            for i2, it in enumerate(lst):
+                if os.path.normcase(it.get("path") or "") == os.path.normcase(path or ""):
+                    hit = i2
+                    break
+            if hit is None:
+                self.status.configure(text=u"这条不是手工登记的，删不了：%s" % path)
+                return
+            if not messagebox.askyesno(u"移除", u"移除这条登记的地址？\n%s" % path,
+                                       parent=win):
+                return
+            lst.pop(hit)
+            d2[_key] = lst
+            _mod.save_extra_roots(d2)
+            _mod.invalidate_roots()
+            self.status.configure(text=u"已移除：%s" % path)
+            _reopen()
+
+        def toggle_add():
+            """「手动添加检索地址」：摊开 / 收起那一层提示（提示词 + 选目录入口）。
+
+            第五十七轮（爱卿令）：收起时**连位子一起撤**（pack_forget）——
+            先前只销毁里面的东西，空 Frame 还占着原本那块高度，中间就空一块。
+            """
+            if hint_box.winfo_manager():
+                hint_box.pack_forget()
                 try:
-                    stamp = time.strftime("%Y-%m-%d %H:%M",
-                                          time.localtime(os.path.getmtime(path)))
+                    win.update_idletasks()
                 except Exception:
-                    stamp = ""
-                info = "   %s" % (("%.1f KB" % (sz / 1024.0)) if sz else "目录")
-                if stamp:
-                    info += "  ·  %s" % stamp
-                txt.insert("end", info + "\n", "meta")
-                if w.get("desc"):
-                    txt.insert("end", w.get("desc", "") + "\n", "desc")
+                    pass
+                return
+            for c in hint_box.winfo_children():
+                c.destroy()
+            card = tk.Frame(hint_box, bg=CARD, highlightthickness=1,
+                            highlightbackground=LINE)
+            card.pack(fill="x")
+            tk.Label(card,
+                     text=u"不确定它的工作目录在哪？把下面这段提示词粘给这个 Agent，"
+                          u"它会把自己记录所在的目录全报给你；\n"
+                          u"拿到之后，逐个用「选择目录加入…」登记进来就行。",
+                     bg=CARD, fg=DIM, font=F_HINT, justify="left", anchor="w"
+                     ).pack(fill="x", padx=12, pady=(10, 6))
+            t = tk.Text(card, wrap="word", bg="#ffffff", fg=FG, bd=0, height=5,
+                        highlightthickness=1, highlightbackground=LINE,
+                        font=F_DLG, padx=10, pady=8, cursor="arrow")
+            t.insert("1.0", _ask_text())
+            t.configure(state="disabled")
+            t.pack(fill="x", padx=12)
+            row2 = tk.Frame(card, bg=CARD)
+            row2.pack(fill="x", padx=12, pady=(8, 10))
+            ttk.Button(row2, text="复制提示词", style="Tab.TButton",
+                       command=lambda: copy_ask()).pack(side="left")
+            ttk.Button(row2, text="选择目录加入…", style="Act.TButton",
+                       command=lambda: add_addr()).pack(side="left", padx=(6, 0))
+            ttk.Button(row2, text="收起", style="Tab.TButton",
+                       command=lambda: toggle_add()).pack(side="right")
+            # 摊在工具条与清单之间（before=body），不是塞在最底下
+            try:
+                hint_box.pack(fill="x", padx=22, pady=(0, 6), before=body)
+            except Exception:
+                hint_box.pack(fill="x", padx=22, pady=(0, 6))
+            try:
+                win.update_idletasks()
+            except Exception:
+                pass
 
-        txt.insert("end", "\n（点上面任何一行，即打开该文件 / 目录）\n", "meta")
+        # ---- 清单：内置与手工**一视同仁**，同一条流水排下去 ----
+        _rows = []
+        try:
+            _mod = self._scanner_mod()
+            for r in (_mod.record_roots_of(agent) if _mod else []):
+                _mode = {"direct": u"直接读", "digest": u"摘录",
+                         "digest_sqlite": u"摘录", "skip": u"只登记（格式读不了）"}.get(
+                             r.get("mode"), r.get("mode") or "")
+                _rows.append((r.get("name") or u"（未命名）", r.get("root") or "",
+                              u"%s ｜ %s 个文件" % (_mode, r.get("count") or 0), u""))
+        except Exception:
+            _rows = []
+        _extra = []
+        try:
+            _extra = (self._scanner_mod().load_extra_roots() or {}).get(_key) or []
+        except Exception:
+            _extra = []
+        for _it in _extra:
+            _pr = {}
+            try:
+                _pr = self._scanner_mod().probe_path(_it.get("path")) or {}
+            except Exception:
+                _pr = {}
+            _p = _it.get("path") or ""
+            _nm2 = _it.get("name") or os.path.basename(_p.rstrip("\\/")) or _p
+            _rows.append((_nm2, _p,
+                          u"%s ｜ %s 个文件%s"
+                          % (u"直读" if (_it.get("mode") or "direct") == "direct" else u"摘录",
+                             _pr.get("files", u"?"),
+                             u"" if _pr.get("exists", True) else u"　⚠ 路径不存在"),
+                          _p))
+        txt.insert("end", u"数据文件地址", "h2")
+        txt.insert("end", u"　　共 %d 处\n" % len(_rows), "h2n")
+        txt.insert("end", u"本 Agent 的记录都长在这些位置，一律就地读、不复制；"
+                          u"点任一行路径即打开该位置。\n", "sub")
+        for _nm, _root, _note, _man in _rows:
+            _row(_nm, _root, _note, _man)
+        txt.insert("end", u"手工登记的地址，可在这行上右键移除。\n", "sessLab")
+
         txt.configure(state="disabled")
         txt.bind("<Button-1>", on_click)
+        txt.bind("<Button-3>", on_rclick)
         win.bind("<Escape>", lambda _e: win.destroy())
         return win
-
-    def _copy_works(self, works):
-        """把工作区文件清单（类别 + 名字 + 地址）复制到剪贴板，便于接力者取用。"""
-        lines = ["%s\t%s\t%s" % (w.get("role", ""), w.get("name", ""),
-                                 w.get("path", "")) for w in works]
-        try:
-            self.clipboard_clear()
-            self.clipboard_append("\n".join(lines))
-            self.update_idletasks()
-            self.status.configure(
-                text="已复制 %d 条工作区文件清单到剪贴板。" % len(works))
-        except Exception:
-            self.status.configure(text="复制未成（剪贴板不可用）。")
 
     def _detail_focus(self, row):
         """焦点落上即开详情；用短延迟挡掉重复开窗。"""
@@ -4640,11 +5199,7 @@ class App(tk.Tk):
         if kinds:
             tk.Label(head, text="  " + " · ".join(kinds) + "  ", bg=SOFT,
                      fg=darken_hex(INFO, 0.18), font=F_TAG).pack(side="left", padx=(10, 0))
-        # 右上角：更新数据（仅 Agent；先绑右侧者最靠右，故在「路径」之前）
-        if row.get("key") and (row.get("agent") or row.get("kind") == "agent"):
-            ttk.Button(head, text="更新数据", style="Tab.TButton",
-                       command=lambda rr=row: self._update_data(rr)
-                       ).pack(side="right", padx=(8, 0))
+        # 第五十五轮：「更新数据」按钮已撤（该机制废除）
         if row.get("meta"):
             tk.Label(head, text="路径", bg=BG, fg=FAINT, font=F_HINT).pack(side="right")
 
@@ -4686,15 +5241,22 @@ class App(tk.Tk):
         if row.get("proj"):
             pr = row["proj"]
             hit = row.get("_tasks") or []
-            sec("已实现的功能")
+            # 第六十一轮（爱卿令）：**人工清单优先** —— 主要项目就是「用户手选的整理层」，
+            #   自动摘录只当线索；哪一段是人工的，页面上直接标出来。
+            _man = pr.get("features") if isinstance(pr.get("features"), list) else []
+            _man = [str(x).strip() for x in _man if str(x).strip()]
             feats = self._project_features(pr, hit)
+            sec("已实现的功能" + ("（我划的重点）" if _man else "（自动摘录，供定位）"))
             if feats:
-                for _f in feats:
+                for _f in feats[:12]:
                     txt.insert("end", "  · " + _f + "\n", "desc")
+                if not _man:
+                    txt.insert("end", "（上面是应用从记录里自动摘出的片段，只当线索用；"
+                                      "要准的结论，点右边「编辑我划的重点」自己写一份。）\n", "dim")
             else:
-                txt.insert("end", "（日志里还没摘出功能条目；可在 主要项目.json 里"
-                                  "给该项目加 features 数组，人工写一份更准）\n", "dim")
-            sec("开发日志（%d 条，按时间倒序）" % len(hit))
+                txt.insert("end", "（还没摘出功能条目 —— 点右边「编辑我划的重点」写一份，"
+                                  "那份会优先显示）\n", "dim")
+            sec("开发日志（%d 条，自动摘录，按时间倒序）" % len(hit))
             for _i, _t in enumerate(hit, 1):
                 txt.insert("end", "  %d. %s　" % (_i, _t.get("when") or "—"), "lbl")
                 txt.insert("end", (_t.get("title") or "")[:70] + "\n", "desc")
@@ -4717,6 +5279,11 @@ class App(tk.Tk):
                 ttk.Button(_foot, text="打开最新产物所在目录", style="Tab.TButton",
                            command=lambda _p=os.path.dirname(_clip[0]): self.open_path(_p)
                            ).pack(side="right", padx=(0, 6))
+            ttk.Button(_foot, text="编辑我划的重点…", style="Act.TButton",
+                       command=lambda _r=row: self._edit_project_features(
+                           _r["proj"],
+                           after=lambda: (win.destroy(), self._show_detail(_r)))
+                       ).pack(side="right", padx=(0, 6))
             ttk.Button(_foot, text="设置主要项目", style="Tab.TButton",
                        command=self.projects_dialog).pack(side="right", padx=(0, 6))
             try:
@@ -4944,11 +5511,9 @@ class App(tk.Tk):
 
         path = (agent or {}).get("exe") or row.get("meta") or ""
 
-        # 名下挂着工作区散件者：详情窗里也能直开工作台
-        if (agent or {}).get("works"):
-            ttk.Button(foot, text="打开工作台（%d 件）"
-                       % len(agent.get("works") or []),
-                       style="Tab.TButton",
+        # 详情窗里也能进工作台（第五十五轮：不再按「工作 N 件」论有无）
+        if agent and agent.get("kind") != "doc":
+            ttk.Button(foot, text="打开工作台", style="Tab.TButton",
                        command=lambda rr=row: self.open_workspace(rr)
                        ).pack(side="right", padx=(0, 6))
 
@@ -5055,6 +5620,131 @@ class App(tk.Tk):
         self._auto_onboard()      # 新 Agent 一出现就自动接 MCP + 放指针
 
 
+# ---------- 单实例：已有窗口就把它提到前台，别再开一个（第五十一轮） ----------
+# 爱卿之令：连点应用程序会弹出一堆一模一样的主界面 —— 应该把已有窗口前置。
+# 做法：命名互斥体判「是否已有实例」+ 抢前台（Windows 的前台锁要用
+#   AttachThreadInput 绕，这是老办法里最稳的一条；不成再闪任务栏提示）。
+_SINGLE_MUTEX = None          # 句柄必须留着，不然互斥体被回收，闸门就废了
+SINGLE_NAME = "Global\\AgentAssetOverview.SingleInstance.v1"
+
+
+def _bring_to_front(hwnd):
+    """把某个窗口提到前台（尽力而为）。"""
+    import ctypes
+    u32 = ctypes.windll.user32
+    k32 = ctypes.windll.kernel32
+    try:
+        u32.ShowWindow(hwnd, 9)                     # SW_RESTORE：最小化的也拉回来
+    except Exception:
+        pass
+    try:
+        fg = u32.GetForegroundWindow()
+        t_fg = u32.GetWindowThreadProcessId(fg, None) if fg else 0
+        t_me = k32.GetCurrentThreadId()
+        if t_fg and t_fg != t_me:
+            u32.AttachThreadInput(t_me, t_fg, True)
+            u32.BringWindowToTop(hwnd)
+            ok = u32.SetForegroundWindow(hwnd)
+            u32.AttachThreadInput(t_me, t_fg, False)
+        else:
+            u32.BringWindowToTop(hwnd)
+            ok = u32.SetForegroundWindow(hwnd)
+    except Exception:
+        ok = False
+    # 前台没抢到也至少闪一下任务栏，让人看见它在哪儿
+    try:
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("hwnd", ctypes.c_void_p),
+                        ("dwFlags", ctypes.c_uint), ("uCount", ctypes.c_uint),
+                        ("dwTimeout", ctypes.c_uint)]
+        fi = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, 3, 3, 0)   # FLASHW_ALL
+        u32.FlashWindowEx(ctypes.byref(fi))
+    except Exception:
+        pass
+    return bool(ok)
+
+
+def _find_main_window():
+    """找本应用**真正的主窗**。
+
+    2026-09-20（单实例闸门修复）：从前是先 `FindWindowW(None, APP_TITLE)` ——
+    只按标题认人。问题在于本应用里所有 `tk.Toplevel`（提示小牌、更新数据浮窗、
+    忙碌浮窗）**都顶着与主窗一模一样的标题**（Tk 的 Toplevel 默认继承根的标题）。
+    于是只要进程里还剩一枚提示牌没销毁，闸门就认定「程序开着呢」，把新启动的
+    挡在门外 —— 双击图标毫无反应，最坑的是它连个错都不报。
+
+    今按三条硬标准认主窗：
+      ① 可见；② 标题恰为 APP_TITLE；③ **没有属主**（owner==0）——
+      提示牌与浮窗都是 `transient(self)`，必有属主，一条就筛掉了；
+      再加一条尺寸下限（≥300×200）兜底，免得将来又冒出别的小窗。
+    """
+    import ctypes
+    from ctypes import wintypes
+    u32 = ctypes.windll.user32
+    found = []
+
+    CB = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+    def _cb(hw, _l):
+        try:
+            if not u32.IsWindowVisible(hw):
+                return True
+            if u32.GetWindow(hw, 4):                # GW_OWNER != 0 → 是别人的子窗
+                return True
+            n = u32.GetWindowTextLengthW(hw)
+            if n <= 0:
+                return True
+            b = ctypes.create_unicode_buffer(n + 1)
+            u32.GetWindowTextW(hw, b, n + 1)
+            if b.value != APP_TITLE:
+                return True
+            r = wintypes.RECT()
+            u32.GetWindowRect(hw, ctypes.byref(r))
+            if (r.right - r.left) < 300 or (r.bottom - r.top) < 200:
+                return True
+            found.append(hw)
+        except Exception:
+            pass
+        return True
+
+    try:
+        u32.EnumWindows(CB(_cb), 0)
+    except Exception:
+        return 0
+    return found[0] if found else 0
+
+
+def _single_instance_gate():
+    """已经有实例吗？有就把它的窗口提到前台，并让本次启动退出。
+
+    返回 True 表示「已有实例，请退出」。
+    """
+    import ctypes
+    global _SINGLE_MUTEX
+    try:
+        k32 = ctypes.windll.kernel32
+        k32.CreateMutexW.restype = ctypes.c_void_p
+        _SINGLE_MUTEX = k32.CreateMutexW(None, False, SINGLE_NAME)
+        if k32.GetLastError() != 183:            # ERROR_ALREADY_EXISTS
+            return False                          # 我是第一个，继续开界面
+    except Exception:
+        return False                              # 判不了就别拦，宁可多开也别开不了
+    # 已有实例：等它的窗口出现（可能正在启动），提到前台，然后退出
+    import time as _t
+    for _ in range(12):                           # 约 3 秒
+        h = _find_main_window()
+        if h:
+            _bring_to_front(h)
+            return True
+        _t.sleep(0.25)
+    # 2026-09-20：等了 3 秒也没有**能看见的主窗** —— 说明守着这道闸门的那个实例
+    # 早就没了踪影（被强杀、或者只剩个没窗的残骸），而互斥体是 Global 的，
+    # 只要还有任何一个进程攥着那个句柄，它就一直「存在」。
+    # 此时**必须放行**：宁可多开一扇窗，也不能让人双击了图标却什么都不发生。
+    # （从前这里写的是 return True —— 没窗也拦，于是谁也开不了。）
+    return False
+
+
 def _hide_console():
     """把控制台窗口藏掉。
 
@@ -5078,6 +5768,14 @@ def main():
     if "--mcp" in sys.argv:
         import agent_mcp
         return agent_mcp.serve()
+    # 单实例闸门：**只拦不带参数的正常启动** —— `--mcp`（可能被多个客户端各拉一个）
+    # 与 `--selftest` 这类开关不拦（第五十一轮）
+    if not any(a.startswith("--") for a in sys.argv[1:]):
+        try:
+            if _single_instance_gate():
+                return 0          # 已有主界面，已把它提到前台，本次悄悄退出
+        except Exception:
+            pass
     _hide_console()                  # 图形界面：藏掉控制台那枚黑窗口
     app = App()
     app.mainloop()
@@ -5246,32 +5944,21 @@ def _selftest():
         import traceback
         step("丁段出错：" + traceback.format_exc())
 
-    # --- 戊：WorkBuddy 名下的「工作台」（第十五轮） ---
+    # --- 戊：工作台（第五十五轮：应用内那格已废，改验原生记录与本体目录） ---
     try:
         wb = [a for a in app.agents if a.get("key") == "workbuddy"]
         if not wb:
             step("戊段：名册里无 WorkBuddy 条目")
         else:
             works = wb[0].get("works") or []
-            step("戊1 WorkBuddy 名下 works 数 = %d（应 > 0）" % len(works))
-            step("戊2 works_dir = %s" % wb[0].get("works_dir"))
-            roles = {}
-            for w in works:
-                roles[w.get("role", "?")] = roles.get(w.get("role", "?"), 0) + 1
-            step("戊3 分类 = %s" % roles)
-            bad = [w.get("name") for w in works if not os.path.exists(w.get("path", ""))]
-            step("戊4 路径不存在的条目 = %s（应为空）" % bad)
-            # 其它 Agent 不应沾 works
-            leak = [a.get("name") for a in app.agents
-                    if a.get("key") != "workbuddy" and a.get("works")]
-            step("戊5 除 WorkBuddy 外带 works 的 = %s（应为空）" % leak)
-            # 卡片行是否带 has_works
-            app.cat = "agents"
-            app.refresh()
-            app.update_idletasks()
-            row = [r for r in app.collect() if r.get("key") == "workbuddy"]
-            if row:
-                step("戊6 卡片 has_works = %s（应 True）" % row[0].get("has_works"))
+            step("戊1 WorkBuddy 原生记录数 = %d（应 > 0）" % len(works))
+            step("戊2 works_dir 是否还产出 = %s（应 False）"
+                 % bool(wb[0].get("works_dir")))
+            bad = [w.get("name") for w in works
+                   if not os.path.exists(w.get("path", ""))]
+            step("戊3 路径不存在的条目 = %s（应为空）" % bad[:5])
+            step("戊4 本体目录 = %s" % (app._agent_home(wb[0]) or "（无）"))
+            step("戊5 原生记录根数 = %d" % len(app._record_roots_of(wb[0])))
     except Exception:
         import traceback
         step("戊段出错：" + traceback.format_exc())

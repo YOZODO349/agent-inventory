@@ -44,6 +44,106 @@ def first_paragraph(path, limit=220):
         return s[:limit]
     return ""
 
+def scan_suite_members(skills):
+    """把「整合卡」里的成员也收进索引 —— 带中文说明、标 `hidden`。
+
+    第五十三轮（爱卿问：为什么中文查不到 minimalist-ui）——
+    成员的**中文说明只长在界面上**，没进索引；检索只认 SKILL.md 的英文
+    frontmatter，于是"极简""粗野"这类中文词一个都命不中。
+
+    此处把成员也收一份：界面上仍只露总纲那张金卡（`hidden=True` 不单列），
+    但**检索能按中文命中**它们。
+    """
+    import json as _j
+    out = []
+    for s in (skills or []):
+        d = s.get("path") or ""
+        if not os.path.isdir(d):
+            continue
+        suite_json = ""
+        try:
+            for f in sorted(os.listdir(d)):
+                if f.endswith(".suite.json"):
+                    suite_json = os.path.join(d, f)
+                    break
+        except Exception:
+            continue
+        if not suite_json:
+            continue
+        try:
+            j = _j.load(open(suite_json, "r", encoding="utf-8"))
+        except Exception:
+            continue
+        labels = j.get("labels") or {}
+        # 成员是**平铺**在技能库根下的（与套件目录同级），不是套在套件里 ——
+        #   先找同级，找不到再看套件目录内部（两种布局都兼容）
+        _parent = os.path.dirname(d)
+        for m in (j.get("members") or []):
+            md = os.path.join(_parent, m)
+            if not os.path.isdir(md):
+                md = os.path.join(d, m)
+            sk = os.path.join(md, "SKILL.md")
+            if not (os.path.isdir(md) and os.path.isfile(sk)):
+                continue
+            fm = read_frontmatter(sk)
+            nm = fm.get("name") or m
+            cn = labels.get(nm) or labels.get(m) or ""
+            files = 0
+            try:
+                files = sum(len(fs) for _, _, fs in os.walk(md))
+            except Exception:
+                pass
+            out.append({
+                "name": nm, "dir": m,
+                "desc": cn or fm.get("description") or first_paragraph(sk),
+                "cn": cn, "suite": s.get("name") or s.get("dir") or "",
+                "suite_label": j.get("label") or "",
+                "hidden": True, "member_of": s.get("dir") or "",
+                "path": md, "source": s.get("source", ""), "files": files,
+            })
+    # 同一套件可能在多处技能架里各有一份（如 ~/.workbuddy/skills 与本工具技能库），
+    # 成员会因此收重 —— 按 name 去重，优先留「本工具技能库」那份
+    uniq = {}
+    for x in out:
+        k = x["name"]
+        old = uniq.get(k)
+        if old is None or (x.get("source") == "本工具技能库"
+                           and old.get("source") != "本工具技能库"):
+            uniq[k] = x
+    return list(uniq.values())
+
+
+def skill_lib_dir():
+    r"""技能真身所在：应用内「通用资源\skills」，缺则退回家目录 agent-skills。"""
+    lib = os.path.join(HERE, "通用资源", "skills")
+    if not os.path.isdir(lib):
+        lib = os.path.join(os.path.expanduser("~"), "agent-skills")
+    return lib
+
+def is_lib_mount(d):
+    r"""技能架里的这一枚，是不是**指向技能库的联接**？
+
+    第五十四轮（爱卿问：同一个技能怎么在名册里冒出两张卡）——
+    第二十一轮起技能真身统一收在应用内「通用资源\skills」，
+    各家技能架（~/.workbuddy/skills、~/.claude/skills …）里只留 Junction 指过来。
+    扫描器原先照单全收：同一个技能被记两遍（「用户级」一份、「本工具技能库」一份），
+    界面上就并排摆出两张一模一样的卡 —— 名册 65 条里 24 个名字是重名的。
+
+    判据两条：**realpath 落在技能库之内**，且**自身路径与 realpath 不同**（即联接）。
+    真身就在库里的目录两条都不成立，照收不误。
+    """
+    try:
+        lib = skill_lib_dir()
+        if not os.path.isdir(lib):
+            return False
+        rp = os.path.realpath(d).rstrip("\\/").lower()
+        lp = os.path.realpath(lib).rstrip("\\/").lower()
+        if rp != lp and not rp.startswith(lp + os.sep):
+            return False
+        return os.path.normcase(os.path.abspath(d)) != os.path.normcase(rp)
+    except Exception:
+        return False
+
 def scan_skills(root, source):
     out = []
     if not os.path.isdir(root):
@@ -52,6 +152,9 @@ def scan_skills(root, source):
         d = os.path.join(root, name)
         sk = os.path.join(d, "SKILL.md")
         if not (os.path.isdir(d) and os.path.isfile(sk)):
+            continue
+        # 指向技能库的联接不再重复计 —— 真身那份已由「本工具技能库」收走
+        if is_lib_mount(d):
             continue
         fm = read_frontmatter(sk)
         files = sum(len(fs) for _, _, fs in os.walk(d))
@@ -91,6 +194,11 @@ def collect():
     if not os.path.isdir(_lib):
         _lib = os.path.join(HOME, "agent-skills")
     R["skills"] += scan_skills(_lib, "本工具技能库")
+    # 整合卡的成员：收进索引（hidden），让中文也能命中它们
+    try:
+        R["skills"] += scan_suite_members(R["skills"])
+    except Exception:
+        pass
 
     R["skill_shelves"] = []
     for lr in [".claude", ".cursor", ".trae", ".agent", ".agents"]:

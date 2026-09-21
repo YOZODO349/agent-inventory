@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import glob
+import time
 import io
 import json
 
@@ -127,7 +128,7 @@ KNOWN = [
     },
     {
         "key": "chunxiao",
-        "name": "春宵夜宴助手",
+        "name": "某个项目助手",
         "desc": "基于 AstrBot 运行时的自建机器人实例。",
         "exe": r"@HOME@\AppData\Local\AstrBot\backend\python\pythonw.exe",
         "icon": "astrbot.png",
@@ -668,42 +669,9 @@ LOG_MAX_COPY = 512 * 1024          # 单文件超 512 KB 不抄（大件另走�
 LOG_MAX_FILES = 40                 # 一轮最多抄几个，免得一口气搬空
 LOG_DIGEST_MAX = 300 * 1024        # 摘录单篇上限
 
-LOG_SOURCES = {
-    "workbuddy": [
-        {"name": "WorkBuddy 会话记忆",
-         "glob": os.path.join(HOME, "WorkBuddy", "*", ".workbuddy", "memory", "*.md"),
-         "mode": "copy"},
-        # 第三十六轮（爱卿问：最新的那条记录怎么没抄到）——
-        # WorkBuddy 还有一份**用户级长期记忆**：~/.workbuddy/memory/<会话>_memory.md，
-        # 而且**正在进行的会话就往这里写**。先前的 glob 只扫各会话工作区里的
-        # memory 子目录，于是"当前这次会话"的记录永远抄不到 —— 症状就是
-        # 点了「手动抄录」却报"暂无新日志"。
-        {"name": "WorkBuddy 长期记忆",
-         "glob": os.path.join(HOME, ".workbuddy", "memory", "*.md"),
-         "mode": "copy"},
-    ],
-    "codexplus": [
-        {"name": "Codex 笔记",
-         "glob": os.path.join(HOME, ".codex", "memories", "*.md"),
-         "mode": "copy"},
-        {"name": "Codex 会话实录",
-         "glob": os.path.join(HOME, ".codex", "sessions", "*", "*", "*", "*.jsonl"),
-         "mode": "digest"},
-    ],
-    "astrbot": [
-        {"name": "AstrBot 会话工作区",
-         "glob": os.path.join(HOME, ".astrbot", "data", "workspaces", "*", "**", "*"),
-         "mode": "copy"},
-    ],
-    # 只有缓存/二进制的，记下位置但不抄（免得搬一堆没用的）
-    "cursor": [{"name": "Cursor 会话存储（仅登记，不抄）",
-                "glob": os.path.join(os.environ.get("APPDATA", ""), "Cursor", "User",
-                                     "workspaceStorage", "*"),
-                "mode": "skip"}],
-    "grokbot": [{"name": "Grok Bot 数据（仅登记，不抄）",
-                 "glob": os.path.join(os.environ.get("APPDATA", ""), "Grok Bot", "*"),
-                 "mode": "skip"}],
-}
+# LOG_SOURCES（旧版抄录源）已于第三十九轮**整体删除** ——
+# 现在只有一个真源：RECORD_ROOTS（记录根登记表，就地读写）。
+
 
 # ---------- 工作任务及产物一览（第二十八轮） ----------
 # 爱卿令：把各 Agent 的任务/会话整理成单独一览；点进去看「做了什么、谁参与、
@@ -1002,7 +970,7 @@ def agent_key_of(agent):
     return (agent.get("key") or "").strip().lower()
 
 
-def iter_record_files(agents, include_digest_cache=True):
+def iter_record_files(agents, include_digest_cache=True, orphans=True):
     """就地索引的**统一入口**：产出 (agent_name, 文件路径, 来源名)。
 
     搜索、工作台、MCP 全走它 —— 不再依赖任何抄录副本。
@@ -1019,13 +987,8 @@ def iter_record_files(agents, include_digest_cache=True):
             for fp in _walk_root(r["root"], r.get("ext") or ROOT_EXTS,
                                  r.get("depth", 4)):
                 yield a.get("name") or key, fp, r["name"]
-        # 各 Agent **主动整理的工作记录**（`工作记录\<Agent>\`）也是记录，同样就地读。
-        #    这一格是人（或 Agent 按「更新数据」提示词）写的整理稿 —— 内容最有价值，
-        #    第三十七轮改就地索引时曾漏掉它，此处补回。
-        wd = a.get("works_dir") or ""
-        if wd and os.path.isdir(wd):
-            for fp in _walk_root(wd, ROOT_EXTS, 2):
-                yield a.get("name") or key, fp, "工作记录"
+        # 第五十五轮（爱卿令）：**应用内「一格一 Agent 的工作记录夹」整体废除** ——
+        #   记录只认各家原生位置（就地索引），应用不再自留一格。
         # 这个 Agent 的摘录缓存也算它的记录
         if include_digest_cache:
             for fp in glob.glob(os.path.join(digest_cache_dir(), "*.md")):
@@ -1034,7 +997,12 @@ def iter_record_files(agents, include_digest_cache=True):
                     if r.get("mode") in ("digest", "digest_sqlite") and \
                             bn.startswith(r["name"] + "_"):
                         yield a.get("name") or key, fp, r["name"] + "（摘录）"
-    # 没有对应客户端的记录根也要读（如桌面 —— 爱卿习惯把记录直接放桌面）
+    # 没有对应客户端的记录根也要读（如桌面 —— 爱卿习惯把记录直接放桌面）。
+    #   ⚠️ 但**按单个 Agent 调用时必须关掉**（orphans=False）：否则别的 Agent 的根
+    #   会被当成"孤儿"、一股脑塞给这一个 Agent（第三十九轮踩过：每个 Agent 都
+    #   列出同一份 63 件 ✗）。
+    if not orphans:
+        return
     for key, roots in all_roots().items():
         if key in covered:
             continue
@@ -1153,110 +1121,6 @@ def _digest_sqlite(src, st, key, lim_bytes=160 * 1024):
     return made, src["name"]
 
 
-def cleanup_transcribed(agents, archive=True):
-    """清掉早期抄录留下的副本（内容与原生目录重复）。
-
-    安全底线：**删之前先确认源还在** —— 源里找不到这条记录的踪影，就留着
-    （那可能是唯一一份）。默认不硬删，而是移进 `备份/抄录副本_<日期>/`，
-    真要删就把那个文件夹删掉（一步的事，且可反悔）。
-    """
-    import shutil
-    import time as _t
-    prefixes = []
-    for roots in RECORD_ROOTS.values():
-        for r in roots:
-            prefixes.append(r["name"] + "_")
-    prefixes += ["WorkBuddy 会话记忆_", "WorkBuddy 长期记忆_", "Codex 笔记_",
-                 "Codex 会话实录_", "AstrBot 会话工作区_", "自动抄录"]
-    # 先把所有原生记录根的**路径**收集起来，用来判断「源还在不在」
-    live = []
-    for a in (agents or []):
-        if (a.get("kind") or "agent") != "agent":
-            continue
-        for _who, fp, _src in iter_record_files([a], include_digest_cache=False):
-            live.append(fp)
-    for key, roots in RECORD_ROOTS.items():
-        for r in roots:
-            for d in _expand_roots(r["root"]):
-                live.append(d)
-            if r.get("mode") == "digest" and r.get("glob"):
-                # 摘录档的「源」是那些大文件本身（如 .jsonl），也得算进来
-                try:
-                    live.extend(glob.glob(r["glob"], recursive=True))
-                except Exception:
-                    pass
-    live_blob = "\n".join(live).lower()
-    box = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "备份", "抄录副本_" + _t.strftime("%Y%m%d-%H%M"))
-    moved, kept = [], []
-    for a in (agents or []):
-        base = a.get("works_dir") or ""
-        if not base or not os.path.isdir(base):
-            continue
-        for entry in sorted(os.listdir(base)):
-            if not any(entry.startswith(x) for x in prefixes):
-                continue
-            if entry.lower().endswith(".bak_before_agentinventory"):
-                continue
-            src = os.path.join(base, entry)
-            tail = entry.split("_", 1)[1] if "_" in entry else entry
-            tail = os.path.splitext(tail)[0].lower()
-            if tail and tail not in live_blob:
-                kept.append((a.get("name"), entry))       # 源里找不到 → 留着
-                continue
-            try:
-                if archive:
-                    os.makedirs(box, exist_ok=True)
-                    shutil.move(src, os.path.join(box, (a.get("name") or "?") + "_" + entry))
-                elif os.path.isdir(src):
-                    shutil.rmtree(src, ignore_errors=True)
-                else:
-                    os.remove(src)
-                moved.append((a.get("name"), entry))
-            except Exception as e:
-                kept.append((a.get("name"), entry + "（失败：%s）" % str(e)[:30]))
-    return {"moved": moved, "kept": kept, "box": box if archive else "",
-            "live_count": len(live)}
-
-
-# ---------- 未收录 Agent 的自动发现（第四十五轮） ----------
-# 爱卿问："不收录就识别不到？" —— 是的，先前只认 KNOWN 登记表 +
-#   桌面/开始菜单快捷方式 + 按特征名全盘寻真身；表里没写的客户端当不存在。
-# 今补：按**特征**自动发现 —— 常见安装位置里，凡带 MCP 配置 / 技能目录 /
-#   AGENTS.md / 记忆目录 这类东西的目录，都算疑似 Agent 客户端。
-AGENT_MARKERS = {
-    "mcp.json": u"有 MCP 配置",
-    "mcp_server.json": u"有 MCP 注册表",
-    ".mcp.json": u"有 MCP 配置",
-    "skills": u"有技能目录",
-    "SKILL.md": u"有技能",
-    "AGENTS.md": u"有 AGENTS.md",
-    "CLAUDE.md": u"有 CLAUDE.md",
-    "GEMINI.md": u"有 GEMINI.md",
-    "memory": u"有记忆目录",
-    "memories": u"有记忆目录",
-    "plugins": u"有插件目录",
-    "extensions": u"有扩展目录",
-    "config.toml": u"有配置文件",
-}
-# 名字里带这些，才值得进一步看特征（免得把一堆软件都算进来）
-# 只列**具体**的客户端名。绝不写 "ai"/"llm"/"gpt" 这种 —— 子串匹配会把
-#   baidu、JetBrains、Windows Mail 全捞进来（第四十五轮的血泪）。
-AGENT_NAME_HINTS = (
-    "agent", "agents", "codex", "claude", "cursor", "windsurf", "trae", "kiro",
-    "cline", "roo", "gemini", "qwen", "kimi", "tongyi", "doubao", "aider",
-    "continue", "copilot", "devin", "workbuddy", "astrbot", "openclaw", "grok",
-    "openai", "anthropic", "deepseek", "zhipu", "moonshot", "ollama", "lmstudio",
-)
-DISCOVER_SKIP = {
-    "baidu", "kingsoft", "billfish", "jetbrains", "mail", "tools", "wps",
-    "microsoft", "windows", "google", "nvidia", "intel", "adobe", "python",
-    "node_modules", "npm", "pip", "nuget", "temp", "packages", "git", "7-zip",
-    "programs", "program files", "program files (x86)", "mozilla", "steam",
-    "agent资产总览", "agent-asset-overview", "_public_export", "backups",
-}
-
-
 def _discover_roots():
     la = os.environ.get("LOCALAPPDATA", "")
     ap = os.environ.get("APPDATA", "")
@@ -1324,7 +1188,7 @@ def discover_agents(known=None, limit=30):
     known = known or []
     kny = set()
     for a in known:
-        for key in ("name", "key", "exe", "works_dir"):
+        for key in ("name", "key", "exe"):
             v = (a.get(key) or "").strip().lower()
             if v:
                 kny.add(v.replace("/", "\\"))
@@ -1361,7 +1225,7 @@ def discover_agents(known=None, limit=30):
                 continue
             found[key] = {"key": key, "name": nm.lstrip("."), "kind": "agent",
                           "category": u"自动发现", "exe": exe or "",
-                          "works_dir": full, "source": u"自动发现（未收录）",
+                          "source": u"自动发现（未收录）",
                           "verified": False, "exists": True, "discovered": True,
                           "desc": u"未在登记表里，但具备 Agent 客户端的特征："
                                   + u"、".join(ev or [u"名字与结构像"])}
@@ -1486,6 +1350,265 @@ def integration_of(agent, extra_roots=None, record_count=0):
     return out
 
 
+# ---------- 会话清单：把各家的对话记忆粗粗总结成"历史会话"（第四十轮） ----------
+# 爱卿之意：工作台该像聊天软件侧边那样，列出**这个 Agent 都聊过什么/做过什么** ——
+#   从它的对话记忆里抽一条条「日期 + 标题 + 一句话摘要」，而不是甩一堆文件路径。
+# 不调模型：标题取记录里最像标题的那行，摘要取正文头几行，日期优先取文件名/正文里的日期。
+_SESS_NOISE = ("<system-reminder", "<user_info", "```", "<identity_context",
+               "<app-context", "<permissions", "OS Version:", "Shell:",
+               # 摘录头与各种元信息（先前它们被当成标题，列出来全是
+               # "摘录时间：…" "updated_at: …" "User Memory Profile" 这种 ✗）
+               "摘录时间", "自动摘录自", "updated_at", "thread_id", "rollout_path",
+               "RAW_JSON", "User Memory Profile", "Last updated", "<!--",
+               "源自 `", "会话记录（自动摘录",
+               # 记忆类文件里 agent 的内心独白与档案头（列出来像"Let me read…" ✗）
+               "Let me ", "let me ", "I'll ", "I need ", "I will ", "Sure,", "Okay,",
+               "Version:", "Memory Block", "thread_", "rollout_",
+               "Requested ", "The user ", "I should", "I can", "I will", "I need",
+               "Let me", "User Memory", "Memory profile")
+
+
+def _clean_line(t):
+    t = " ".join(str(t or "").split())
+    t = t.lstrip("#>*-\u00b7\u2022 ").strip()
+    t = t.rstrip("：:，,。.；; ")
+    return t
+
+
+def _looks_like_title(line):
+    """像标题的行：原来是 # 开头，或含「｜」分隔，或短且不含句号。"""
+    raw = str(line or "").strip()
+    if not raw:
+        return False
+    if raw[0] in "#" or "｜" in raw or " | " in raw:
+        return True
+    core = _clean_line(raw)
+    return 3 <= len(core) <= 46 and core[-1:] not in "。.！!？?"
+
+
+def _prose_only(t, cap=160):
+    """只留"人话"：剔掉路径、代码、JSON、命令行 —— 供会话摘要用。
+
+    爱卿之令：默认视图只显示"用户说了啥 + Agent 回的第一句"，
+    地址与代码一律收进「查看详细信息」。故此处先把非人话的东西洗掉。
+    """
+    out = []
+    for ln in str(t or "").split("\n"):
+        raw = " ".join(ln.split())
+        if not raw:
+            continue
+        if any(x in raw for x in _SESS_NOISE):
+            continue
+        if "\\" in raw or "://" in raw:           # 路径 / URL
+            continue
+        if any(c in raw for c in ("`", "{", "}", "=>", "==", "();", "</", "\"")):
+            continue
+        if re.match(r"^[\w.\-]+:\s", raw):        # "uid: …" / "updated_at: …"
+            continue
+        if re.match(r"^\s*\d{4}-\d\d-\d\d[T ]\d\d:", raw):   # 时间戳开头的行
+            continue
+        if re.match(r"^[\w\-]{8,}[T ]\d{2}:\d{2}", raw):         # 半截时间戳
+            continue
+        digits = sum(1 for c in raw if c.isdigit())
+        if digits > len(raw) * 0.28 and len(raw) > 12:   # 一串编号/id，不像人话
+            continue
+        core = _clean_line(raw)
+        if len(core) < 4:
+            continue
+        out.append(core)
+    return " ".join(out)[:cap]
+
+
+def _first_sentence(t, cap=90):
+    """取第一句人话（到句号/问号/感叹号为止）。"""
+    txt = _prose_only(t, 400)
+    m = re.search(r"^(.{6,%d}?)[。！？!?.]\s" % cap, txt)
+    return (m.group(1) if m else txt[:cap]).strip()
+
+
+# 只从**对话数据文件**里抽会话 —— 爱卿之令（第四十三轮）：
+#   「有很多明显不是对话的选项被误认为是对话……可以改为只从 agent 的对话数据文件提取」
+#   判据：来源名里带「对话记忆 / 会话存档 / 会话实录」的才算对话数据；
+#   而且**必须真找到"用户说的那句"**（对话记忆里是 `### 用户` 段，别的记录里是
+#   `用户说「…」` 引文）。找不到用户那一句的，一律不当会话列 ✗
+_CONV_SRC = ("对话记忆", "会话存档", "会话实录")
+
+
+def _mostly_latin(t):
+    """一句话里汉字太少、字母太多 → 多半不是"我"说的（爱卿从不跟我说英文）。"""
+    han = len(re.findall(r"[\u4e00-\u9fff]", t))
+    lat = len(re.findall(r"[A-Za-z]", t))
+    return lat > 8 and han < max(3, lat * 0.3)
+
+
+def _user_turn(lines, text):
+    """找「用户说的那句」：① `### 用户` 段 ② `用户说「…」` 引文。找不到返回 ""。"""
+    for i2, ln in enumerate(lines[:400]):
+        if ln.strip().startswith("### 用户"):
+            for nxt in lines[i2 + 1:i2 + 8]:
+                cand = " ".join(nxt.split())
+                if not cand or any(x in cand for x in _SESS_NOISE):
+                    continue
+                c = _clean_line(cand)
+                if len(c) >= 4:
+                    return c[:140]
+    m = re.search(u"用户说[：: ]*[「\"“]([^」\"”]{4,200})", text or "")
+    if m:
+        return _clean_line(m.group(1))[:140]
+    m2 = re.search(u"(?:^|\n)\s*用户[：:]\s*(.{4,200})", text or "")
+    if m2:
+        return _clean_line(m2.group(1))[:140]
+    return ""
+
+
+def record_sessions(agent, limit=200):
+    """从某 Agent 的**对话数据文件**里抽「会话清单」。
+
+    每条：[{title,date,gist,reply,user,kind,path,mtime,size}]。
+    只为"真对话"生成 —— 见 `_CONV_SRC` 与 `_user_turn` 的判据。
+    """
+    out = []
+    try:
+        files = list(iter_record_files([agent], orphans=False))
+    except Exception:
+        return out
+    for _who, fp, src in files:
+        # 闸门一：只从对话数据文件里抽（记忆/笔记/整理稿/桌面文本一律不当会话）
+        if not any(k in (src or "") for k in _CONV_SRC):
+            continue
+        try:
+            sz = os.path.getsize(fp)
+            mt = int(os.path.getmtime(fp))
+        except Exception:
+            continue
+        if sz == 0:
+            continue
+        t = ""
+        try:
+            t = io.open(fp, encoding="utf-8", errors="ignore").read(4000)
+        except Exception:
+            pass
+        lines = [x for x in (t or "").split("\n")]
+        # 闸门二：**必须真找到"用户说的那句"** —— 找不到就不算会话（否则会把
+        #   agent 自己的笔记、执行日志都当成对话，列表里全是假货 ✗）
+        _u = _user_turn(lines, t)
+        if not _u or _mostly_latin(_u):
+            continue
+        # 标题：**对话类**先找 `### 用户` 后面那行（那是"他让我做什么"，最像会话标题）
+        title = _u
+        gist_seed = ""
+        for i2, ln in enumerate(lines[:200]):
+            if ln.strip().startswith("### 用户") or ln.strip() in (u"### 用户", u"## 用户"):
+                for nxt in lines[i2 + 1:i2 + 6]:
+                    cand = _clean_line(nxt)
+                    if cand and not any(x in nxt for x in _SESS_NOISE) and len(cand) >= 4:
+                        title = cand[:78]
+                        gist_seed = " ".join(
+                            _clean_line(x) for x in lines[i2 + 2:i2 + 6])
+                        break
+                break
+        if not title:
+            # 记忆类文件优先取**小标题**（`## 项目：某个项目…` 这种，
+            #   比 agent 的第一句独白像标题得多）
+            for ln in lines[:120]:
+                raw = ln.strip()
+                if not raw.startswith("#"):
+                    continue
+                # ⚠️ 这里也得过噪音过滤 —— 先前漏了，于是 `# User Memory Profile`
+                #   这类档案头被当成了会话标题（第四十轮修）
+                if any(x in raw for x in _SESS_NOISE):
+                    continue
+                if len(_clean_line(raw)) >= 4:
+                    title = _clean_line(raw)
+                    break
+        for ln in ([] if title else lines[:40]):
+            raw = ln.strip()
+            if not raw or any(n in raw for n in _SESS_NOISE):
+                continue
+            if _looks_like_title(raw):
+                title = _clean_line(raw)
+                break
+        if not title:
+            for ln in lines[:40]:
+                raw = ln.strip()
+                if raw and not any(n in raw for n in _SESS_NOISE):
+                    title = _clean_line(raw)
+                    break
+        if not title:
+            title = os.path.splitext(os.path.basename(fp))[0]
+        title = title[:78]
+        # 标题里常自带日期前缀（`2026-09-12｜某个项目…`）—— 日期已另存字段，
+        #   标题剥掉前缀更干净
+        m3 = re.match(r"\s*(20\d\d)[-_.]?(\d\d)[-_.]?(\d\d)\s*[｜|\-—–:：]?\s*(.*)$", title)
+        if m3 and len(m3.group(4)) >= 4:
+            date_prefix = "%s-%s-%s" % (m3.group(1), m3.group(2), m3.group(3))
+            title = m3.group(4).strip()[:78]
+        else:
+            date_prefix = ""
+        # 日期：文件名里的 > 标题/正文里的
+        date = ""
+        m = re.search(r"(20\d\d)[-_.]?(\d\d)[-_.]?(\d\d)", os.path.basename(fp))
+        if m:
+            date = "%s-%s-%s" % m.groups()
+        if not date:
+            m2 = re.search(r"(20\d\d)-(\d\d)-(\d\d)", t[:1200])
+            if m2:
+                date = "%s-%s-%s" % m2.groups()
+        if not date and date_prefix:
+            date = date_prefix
+        # 摘要：正文里头几行有内容的（去掉元信息与标题本身）
+        gist_parts = []
+        if gist_seed:
+            gist_parts.append(gist_seed[:150])
+        for ln in lines[:60]:
+            raw = " ".join(ln.split())
+            if not raw or any(n in raw for n in _SESS_NOISE):
+                continue
+            core = _clean_line(raw)
+            if not core or core == title or len(core) < 6:
+                continue
+            gist_parts.append(core)
+            if sum(len(x) for x in gist_parts) > 150:
+                break
+        gist = _prose_only(" ".join(gist_parts), 160)
+        # 回复的第一句：对话类找 `### 助手` 那段的开头；记忆类就取正文第一句人话
+        reply = ""
+        for i3, ln in enumerate(lines[:400]):
+            if ln.strip().startswith("### 助手") or ln.strip() in (u"### 助手", u"## 助手"):
+                reply = _first_sentence("\n".join(lines[i3 + 1:i3 + 14]))
+                break
+        if not reply:
+            reply = _first_sentence(t[title.__len__():] if title else t)
+        user_said = ""
+        if title and any(x in t[:4000] for x in ("### 用户", u"### 用户")):
+            user_said = title               # 对话类的标题本就是用户那句话
+        kind = src.replace("（摘录）", "")
+        out.append({"title": title, "date": date or time.strftime(
+            "%Y-%m-%d", time.localtime(mt)), "gist": gist, "kind": kind,
+            "reply": reply, "user": user_said or "", "path": fp,
+            "mtime": mt, "size": sz})
+    out.sort(key=lambda x: (x.get("date") or "", x.get("mtime") or 0), reverse=True)
+    return out[:limit]
+
+
+def _work_entries(agent):
+    """该 Agent 的**原生**记录文件清单 [(名字, 路径)] —— 就地取，不复制。
+
+    第五十五轮（爱卿令）：取代原先从应用内那格 `工作记录\<Agent>\` 取原料。
+    """
+    out, seen = [], set()
+    try:
+        for _who, fp, _src in iter_record_files([agent]):
+            if fp in seen:
+                continue
+            seen.add(fp)
+            out.append((os.path.basename(fp), fp))
+    except Exception:
+        pass
+    out.sort(key=lambda x: x[0])
+    return out
+
+
 def collect_tasks(agents):
     """把各 Agent 自动抄录下来的日志整理成「任务一览」。"""
     import time as _t
@@ -1494,14 +1617,8 @@ def collect_tasks(agents):
         if (a.get("kind") or "agent") != "agent":
             continue
         owner = a.get("name") or ""
-        base = a.get("works_dir") or ""
-        if not base or not os.path.isdir(base):
-            continue
-        for src_name in ["工作记录"]:            # 外层只跑一次：直接扫这格
-            src_dir = base
-            if not os.path.isdir(src_dir):
-                continue
-            for entry in sorted(os.listdir(src_dir)):
+        # 第五十五轮（爱卿令）：应用内那格已废 —— 原料改成**原生记录就地取**
+        for entry, ep in _work_entries(a):
                 if entry == "自动抄录":
                     continue                     # 旧版留下的分层目录，忽略
                 ep = os.path.join(src_dir, entry)
@@ -1691,7 +1808,7 @@ def sync_agent_logs(agents, state=None):
     import time as _t
     import glob as _glob
     st = state if isinstance(state, dict) else load_log_state()
-    n_copy = n_dig = 0
+    n_copy = n_dig = 0          # n_copy 恒为 0：搬运已废，只为兼容返回签名
     touched = []
     for a in (agents or []):
         if (a.get("kind") or "agent") != "agent":
@@ -1748,31 +1865,10 @@ def sync_agent_logs(agents, state=None):
                         if a.get("name") not in touched:
                             touched.append(a.get("name"))
                     continue
-                if sz > LOG_MAX_COPY or n_copy >= LOG_MAX_FILES:
-                    seen_map[fp] = [mt, sz]      # 太大多记一笔，免得每轮都试
-                    continue
-                try:
-                    root0 = src["glob"].split("*")[0].rstrip("\\/")
-                    rel = os.path.relpath(fp, root0)
-                except Exception:
-                    rel = base
-                parts = rel.split(os.sep)
-                if len(parts) > 1:
-                    # 会话树：根目录下一个「来源_会话」文件夹，内部结构保留
-                    dst = os.path.join(sub, "%s_%s" % (src["name"], parts[0]),
-                                       *parts[1:])
-                else:
-                    dst = os.path.join(sub, "%s_%s" % (src["name"], rel))
-                try:
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    if not os.path.isfile(dst) or os.path.getsize(dst) != sz:
-                        import shutil as _sh
-                        _sh.copy2(fp, dst)
-                        n_copy += 1
-                        if a.get("name") not in touched:
-                            touched.append(a.get("name"))
-                except Exception:
-                    continue
+                # 第三十九轮（爱卿令）：**不再搬运**。各家记录一律就地读
+                #   （见 RECORD_ROOTS / iter_record_files），此处的复制之路已废，
+                #   只留一条说明 —— 免得日后有人又把"抄一份进应用"加回来。
+                seen_map[fp] = [mt, sz]
                 seen_map[fp] = [mt, sz]
     st["_last"] = _t.strftime("%Y-%m-%d %H:%M:%S")
     save_log_state(st)
@@ -1782,53 +1878,7 @@ def sync_agent_logs(agents, state=None):
 # ---------- 各 Agent 的工作记录（第二十四轮） ----------
 # 爱卿令：每个 Agent 都要像 WorkBuddy 那样有自己的工作台，导入的数据按此收编。
 # 全部落在应用内「通用资源\工作记录\<Agent名>」—— 一格一个 Agent，互不越界。
-WORKS_ROOT_NAME = os.path.join("通用资源", "工作记录")
-
-
-def works_root():
-    return os.path.join(HERE, WORKS_ROOT_NAME)
-
-
-def agent_works_dir(agent):
-    """某 Agent 的工作记录夹；没建过就顺手建（建不动也不炸，只返回路径）。"""
-    name = (agent.get("name") or agent.get("key") or "未命名").strip()
-    name = re.sub(r'[\\/:*?"<>|]', "_", name)
-    d = os.path.join(works_root(), name)
-    try:
-        os.makedirs(d, exist_ok=True)
-    except Exception:
-        pass
-    return d
-
-
-def collect_agent_works(agent):
-    """收编该 Agent 工作记录夹里的东西，格式与 collect_workspace 一致，
-
-    如此工作台窗那套按 role 分组的画法照旧能用 —— 导进来的东西看着就跟
-    WorkBuddy 名下那些一模一样。
-    """
-    d = agent_works_dir(agent)
-    out = []
-    try:
-        names = sorted(os.listdir(d))
-    except Exception:
-        return out
-    for f in names:
-        p = os.path.join(d, f)
-        try:
-            if os.path.isdir(p):
-                n = len(os.listdir(p))
-                out.append({"key": "agwork_" + re.sub(r"\W+", "_", f).lower(),
-                            "name": f + "\\", "role": "工作区目录", "path": p,
-                            "size": 0,
-                            "desc": "该 Agent 的工作记录子目录（%d 项）。" % n})
-            else:
-                out.append({"key": "agwork_" + re.sub(r"\W+", "_", f).lower(),
-                            "name": f, "role": "工作区文件", "path": p,
-                            "size": os.path.getsize(p), "desc": _file_note(p)})
-        except Exception:
-            continue
-    return out
+# 第五十五轮：WORKS_ROOT_NAME（应用内那格）已废
 
 
 def collect():
@@ -1860,15 +1910,40 @@ def collect():
 
     # ★ WorkBuddy 名下挂「工作区散件」：别的 Agent 想接力，点开它即可看全
     #   （爱卿第十五轮之令）。只挂得到的、且确有文件的。
-    ws_works = collect_workspace()
     for a in agents:
         if (a.get("kind") or "agent") != "agent":
             continue                      # 只有真 Agent 有工作台
-        d = agent_works_dir(a)
-        mine = collect_agent_works(a)
-        # WorkBuddy 另有自己的历史工作区（HERE 那堆源码与文稿），一并算上
-        a["works"] = (mine + ws_works) if a.get("key") == "workbuddy" else mine
-        a["works_dir"] = d
+        # 第三十九轮（爱卿令）：工作台要显示**它自己存储目录里的记录**，
+        #   不是应用里那份 —— 就地读，直接给真实路径（点开即原处，不搬家）。
+        native = []
+        try:
+            for _who, fp, src in iter_record_files([a], orphans=False):
+                try:
+                    st2 = os.stat(fp)
+                except Exception:
+                    continue
+                native.append({
+                    "key": "nat_" + re.sub(r"\W+", "_", fp).lower()[:56],
+                    "name": os.path.basename(fp),
+                    "role": u"原始记录",
+                    "path": fp, "size": st2.st_size, "native": True,
+                    "source": src,
+                    "desc": u"来自「%s」｜直接就地在原处读，未复制" % src,
+                })
+        except Exception:
+            native = []
+        native.sort(key=lambda x: -os.path.getmtime(x["path"])
+                    if os.path.isfile(x["path"]) else 0)
+        # 有原生记录就显示原生记录；一条都没有时，才退回应用记录夹那份
+        # 会话清单：像聊天软件侧边那样列出"都聊过什么/做过什么"
+        try:
+            a["sessions"] = record_sessions(a)
+        except Exception as _e:
+            a["sessions"] = []
+            a["sessions_error"] = str(_e)[:80]      # 别再静默吞错（踩过）
+        # 第五十五轮（爱卿令）：只留**原生记录**（就地读，不复制）；
+        #   应用内那格（works_dir / works_own）整体废除。
+        a["works"] = native
 
     # 补二：桌面上那些说明文档（正文一并收进来）
     for doc in collect_docs():

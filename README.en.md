@@ -11,6 +11,37 @@ and **indexes their memories and work records in place**, so the agents can look
 
 > *Screenshots use placeholder data — no real paths or project names.*
 
+## Big changes in v0.6.0: from "storage" back to "switchboard"
+
+This release **dismantles** a burden the previous version introduced, and reworks the workbench.
+
+1. **The per-agent "work records" folder is gone.** v0.5.x had every agent hand its notes to
+   `<app>/通用资源/工作记录/<Agent>/`. That prepayment did not pay off: it had to be chased,
+   it went stale, and anything unwritten could never be found. Records are now read **only from
+   each agent's own locations** (indexed in place) — the app keeps no slot of its own and no
+   longer produces `works_dir`. Search and the project pages read the native records again.
+2. **Workbench rework** (one page per agent): **Open agent folder** (its own install directory);
+   **Add search path manually** (the old "add path" + "copy self-report prompt" merged into one
+   button, which unfolds a hint with a ready-to-paste prompt and a "pick a folder…" action);
+   **Attach agent** moved here from the home screen and now applies to **that one agent only**;
+   the address list is **always expanded**, with built-in and manually added entries shown
+   **the same way** (right-click removes a manual one).
+3. **The "record sources" window is gone** — its content lives in each workbench now; the card's
+   "records" light opens that agent's workbench instead.
+4. **Main projects became "the highlights you wrote"**: a new **Edit my highlights** button stores
+   a hand-written feature list that takes **precedence** over auto-extracted lines, and every
+   auto-extracted section is labelled as such.
+5. **Agents are told to check main projects first**: `inventory_index` (one page, ~266 tokens) →
+   `inventory_project` **on a project hit** → `inventory_search` otherwise. The project page was
+   slimmed down as well.
+6. **Optional homepage artwork + a full-width rule** (off by default, see `HOME_ART_*`); the rule's
+   position and thickness are **measured from the image itself**, so swapping the image is enough.
+7. UI fixes: the stats bar no longer collapses into one giant card; the launch button moved to the
+   workbench header; tooltips can be told which side to appear on.
+
+> Upgrade note: an old `<app>/通用资源/工作记录/<Agent>/` folder is simply ignored now —
+> delete or archive it as you please.
+
 ## Download (Windows, no install)
 
 Grab `AgentAssetOverview.exe` from the **[latest release](https://github.com/YOZODO349/agent-inventory/releases/latest)**:
@@ -45,7 +76,7 @@ So this tool does three things:
 | **Agents** | Installed agent clients (built-in registry + shortcuts + a last-resort disk search + **marker-based auto-discovery**). Each card carries **three integration lights** (records / persona / MCP) and **the lights are clickable** — a dark light tells you what to fix. **Click the card for its workbench** |
 | **Skills** | User-level and project-level skills (reads `SKILL.md` frontmatter); same-family skills collapse into one **bundle card** |
 | **MCP servers** | Registrations from WorkBuddy / Cursor / Claude Desktop / AstrBot / Codex. **Only portable ones** — entries tied to a client's private runtime directory are filtered out |
-| **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page |
+| **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page — plus an **Edit my highlights** button whose hand-written list takes precedence |
 
 ## Records: **indexed in place, never copied** (the big change in this release)
 
@@ -61,7 +92,6 @@ Records are read **where they already live**:
 | **AstrBot conversation memory** | `~/.astrbot/data/data_v4.db` (SQLite, tens of MB) | **digest** |
 | AstrBot session workspaces | `~/.astrbot/data/workspaces/` | direct |
 | Desktop text | `~/Desktop/*.md`, `*.txt` | direct |
-| Curated records | `<app>/通用资源/工作记录/<Agent>/` | direct |
 | **Anything you register** | see "let an agent report its own home" | direct or digest |
 
 Three tiers:
@@ -81,10 +111,10 @@ Three tiers:
 
 No need to guess where each client keeps things — **ask it**:
 
-1. Open an agent's **workbench** → click **【检索地址】** → "复制自报家门问话";
-2. Paste that prompt into the agent's chat; it reports its own memory/record folders
-   (absolute paths, file counts, sizes, text or binary);
-3. Back in the app, click **【＋ 添加地址】**, pick the folder and confirm
+1. Open an agent's **workbench** → click **Add search path manually**;
+2. The hint that unfolds contains a **ready-to-paste prompt** — copy it into the agent's chat and
+   it reports its own memory/record folders (absolute paths, file counts, sizes, text or binary);
+3. For each answer, click **pick a folder…**, choose it and confirm
    (the app probes the size and suggests direct-read vs. digest).
 
 Registered locations become searchable **immediately**.
@@ -98,7 +128,7 @@ Registered locations become searchable **immediately**.
 | `inventory_index` | **A one-page index** (~266 tokens): record sources with file counts / latest dates, plus main projects |
 | `inventory_overview` | Machine overview: column counts, main projects, who worked in the last 7 days |
 | `inventory_search` | Full-text search across all columns and **every agent's work records** (file, line, context) |
-| `inventory_project` | One project in full: implemented features / dev log / full artifact paths |
+| `inventory_project` | One project in full: implemented features / dev log / full artifact paths (**the cheapest first step when a main project matches**; a hand-written list wins, auto-extracted parts are labelled) |
 | `inventory_agents` | Agent roster (executable, record folder, blurb) |
 | `inventory_recent` | What each agent did in the last N days |
 | `inventory_skills` | Skill library search |
@@ -124,18 +154,23 @@ Written automatically into: **AstrBot** (persona, stored in SQLite), **WorkBuddy
 
 ## Every agent gets a workbench
 
-- **Workbench**: blurb on top, the agent's record list below;
-- **Search paths (【检索地址】)**: let it report its own home, paste the folders in (see above);
-- **Record sources (【记录来源】)**: one page showing where every record lives (built-in + yours),
-  plus cleanup of leftover duplicate copies;
-- **Attach agents (【接入 Agent】)**: registers the MCP server and drops the
-  "search every turn" pointer; includes a **self-check prompt** and a
-  "copy the read guide (MCP-free)" button;
+Every agent card opens its own workbench; the toolbar has just four things:
+
+- **Launch &lt;Agent&gt;** (in the header): starts the agent itself;
+- **Open agent folder**: opens the agent's own install directory;
+- **Add search path manually**: unfolds a hint — a copyable prompt + "pick a folder…" (see above);
+- **Attach agent**: wires **that one agent** to MCP and drops the "search every turn" pointer,
+  with a self-check prompt and a "copy the read guide (MCP-free)" button;
+- **Body**: the agent's **data locations**, one line each (built-in and manual treated **the same
+  way**); **click a path to open it**, right-click a manual one to remove it;
 - **Editable blurb**: stored in `agent_intros.json`, kept across re-scans.
 
 ## UI and interaction
 
-- **Hover help** on buttons (attached per widget class, so **buttons added later get one automatically**);
+- **Hover help** on buttons (attached per widget class, so **buttons added later get one automatically**; the side can be chosen);
+- **Optional homepage artwork**: the `HOME_ART_*` constants point at a local image, scaled to the
+  "header + stats bar" block in the top-right corner, with an optional full-width rule under it
+  (**off by default**);
 - **Shortcuts**: `Ctrl+F` search ｜ `F5` / `Ctrl+L` rescan ｜ `Ctrl+1..4` switch column ｜
   `Ctrl+P` project settings ｜ `Esc` clear search;
 - Empty columns hide themselves, tab included; anything not found is simply not shown;
@@ -222,7 +257,6 @@ Edit `src/scan_agents_apps.py`; copy the existing shapes:
 | `KNOWN` | Registry of known agent clients (`@HOME@` placeholder; `hidden: True` keeps an entry off the list) |
 | `SIGNATURES` | Per-client "real body" file names, used when a registered path no longer matches |
 | `RECORD_ROOTS` | **The record-root registry**: where each agent's records live and how to handle them (direct / digest / register-only) |
-| `LOG_SOURCES` | The old transcription sources (superseded by `RECORD_ROOTS`, kept for reference) |
 
 ## About the inventory files
 

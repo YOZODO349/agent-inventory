@@ -12,7 +12,9 @@
 import tkinter as tk
 
 # 默认色板（可被外部覆盖）
-BASE_SHADOW  = "#e8eaee"   # 卡片外框
+# 2026-09-20（UI 美化）：原为冷灰 #e8eaee，与应用的暖灰族（#eaeaea / #f7f6f3）
+# 不是一家 —— 一冷一暖并排，卡片看着"脏"。此处归到暖灰族，数值取主程序里的 EDGE。
+BASE_SHADOW  = "#e6e5e1"   # 卡片外框（暖灰，与主程序 EDGE 一致）
 
 
 def _mix(c1, c2, t):
@@ -33,14 +35,17 @@ def lighten(c, t=0.45):
 
 
 class GlassCard(tk.Canvas):
-    """一张白底卡片，左缘一道主色竖条；整块可点击。"""
+    """一张白底卡片，左缘一道主色竖脊；整块可点击。"""
 
-    ACCENT_W = 6.0                    # 左缘竖条宽度（像素）
+    ACCENT_W = 4.0                    # 左缘竖脊宽度（未经缩放的基准值）
 
     def __init__(self, container, liquid="#7fb2e8", size=(300, 118),
                  fill_ratio=0.58, **kw):
         cw, ch = int(size[0]), int(size[1])
         kw.setdefault("bg", "#ffffff")
+        # 第五十二轮（照 redesign-skill 审）：卡片整块可点 —— 鼠标移上去要变手型，
+        # 否则用户不知道它能点（原先只有悬停变色，没有指针提示）
+        kw.setdefault("cursor", "hand2")
         kw.setdefault("highlightthickness", 1)
         kw.setdefault("highlightbackground", BASE_SHADOW)
         kw.setdefault("bd", 0)
@@ -52,6 +57,14 @@ class GlassCard(tk.Canvas):
         self._cw = cw
         self._ch = ch
         self._hover = False
+        self._pressed = False
+        # 竖脊宽度随屏幕缩放走（卡片本身是缩放后的尺寸，脊却钉死 4px 会显得细弱）
+        try:
+            self._sc = float(self.tk.call("tk", "scaling")) / (96.0 / 72.0)
+        except Exception:
+            self._sc = 1.0
+        if not (0.5 <= self._sc <= 4.0):
+            self._sc = 1.0
 
     # ---------- 几何 ----------
     def _geom(self):
@@ -66,23 +79,26 @@ class GlassCard(tk.Canvas):
         return top, bot, w, h
 
     # ---------- 绘制 ----------
+    def _bar_color(self):
+        """竖脊的颜色：静置为本色，悬停略深，按下再深一档（三档就够）。"""
+        if self._pressed:
+            return darken(self.liquid, 0.30)
+        if self._hover:
+            return darken(self.liquid, 0.14)
+        return self.liquid
+
     def redraw(self, wave_t=0.0):
-        """重画卡片。wave_t 参数保留兼容，已不再使用（无动画）。"""
+        """重画卡片。wave_t 参数保留兼容，已不再使用（无动画）。
+
+        改版前左脊是「亮／主／暗」**三段拼色**（顶端提亮 30%、底端压暗 14%），
+        本意是做立体感，实际在大屏上能看出两道横向接缝，像贴纸没贴平。
+        今改为一色到底、通高贴边的一道脊 —— 它是这张卡的身份色，不必装作立体。
+        """
         self.delete("shape")
-        top, bot, w, h = self._geom()
-        col = self.liquid
-
-        # 左缘一道主色竖条（唯一的彩色元素，圆角感靠首尾缩短模拟）
-        ax = self.ACCENT_W
-        self.create_rectangle(0, top + 4, ax, bot - 4,
-                              fill=col, outline="", tags="shape")
-
-        # 竖向条顶端稍亮、底端稍浓，做出极轻的立体感
-        self.create_rectangle(0, top + 4, ax, top + 4 + (bot - top) * 0.06,
-                              fill=lighten(col, 0.30), outline="", tags="shape")
-        self.create_rectangle(0, bot - 4 - (bot - top) * 0.06, ax, bot - 4,
-                              fill=darken(col, 0.14), outline="", tags="shape")
-
+        _top, _bot, _w, h = self._geom()
+        bw = max(3.0, round(self.ACCENT_W * getattr(self, "_sc", 1.0)))
+        self.create_rectangle(0, 0, bw, h, fill=self._bar_color(),
+                              outline="", tags="shape")
         self.tag_raise("win")
 
     def redraw_all(self, wave_t=0.0):
@@ -112,16 +128,48 @@ class GlassCard(tk.Canvas):
         return item
 
     # ---------- 事件（只有悬停与点击，无动画） ----------
+    def _paint_state(self):
+        """按当前状态上色。
+
+        改版前悬停是把描边**从 1px 加粗到 2px** —— 加粗会把卡片的内框挤小
+        一格，卡里的文字跟着挪一下，鼠标划过时整块内容在抖。今改为**只换颜色、
+        不动粗细**：观感一样明确，内容一动不动。
+        """
+        if self._hover:
+            self.configure(highlightbackground=darken(self.liquid, 0.34))
+        else:
+            self.configure(highlightbackground=BASE_SHADOW)
+        try:
+            self.redraw(0.0)
+        except Exception:
+            pass
+
     def _hover_on(self, _e=None):
         self._hover = True
-        self.configure(highlightbackground=darken(self.liquid, 0.20),
-                       highlightthickness=2)
+        self._paint_state()
 
     def _hover_off(self, _e=None):
         self._hover = False
-        self.configure(highlightbackground=BASE_SHADOW, highlightthickness=1)
+        self._pressed = False
+        self._paint_state()
+
+    def _press_on(self, _e=None):
+        self._pressed = True
+        try:
+            self.redraw(0.0)
+        except Exception:
+            pass
+
+    def _press_off(self, _e=None):
+        """松开鼠标：只收回「按下」这一档，**不动悬停态**（指针多半还在卡上）。"""
+        self._pressed = False
+        try:
+            self.redraw(0.0)
+        except Exception:
+            pass
 
     def _say_click(self, _e=None):
+        self._pressed = False
         cb = getattr(self, "_click_cb", None)
         if cb is not None:
             cb()
@@ -138,6 +186,8 @@ class GlassCard(tk.Canvas):
         self._click_cb = callback
         self.bind("<Enter>", self._hover_on)
         self.bind("<Leave>", self._hover_off)
+        self.bind("<ButtonPress-1>", self._press_on)
+        self.bind("<ButtonRelease-1>", self._press_off)
         self.bind("<Button-1>", self._say_click)
         self.bind("<Configure>", self._on_config)
         try:
@@ -161,6 +211,8 @@ class GlassCard(tk.Canvas):
             try:
                 w.bind("<Enter>", self._hover_on)
                 w.bind("<Leave>", self._hover_off)
+                w.bind("<ButtonPress-1>", self._press_on)
+                w.bind("<ButtonRelease-1>", self._press_off)
                 w.configure(cursor="hand2")
             except Exception:
                 pass
@@ -194,6 +246,8 @@ class GlassCard(tk.Canvas):
                 try:
                     w.bind("<Enter>", self._hover_on)
                     w.bind("<Leave>", self._hover_off)
+                    w.bind("<ButtonPress-1>", self._press_on)
+                    w.bind("<ButtonRelease-1>", self._press_off)
                     w.bind("<Button-1>", self._say_click)
                     w.configure(cursor="hand2")
                 except Exception:

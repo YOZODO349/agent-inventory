@@ -53,11 +53,11 @@ TEST_PROMPT = """请做一次接入自检。逐条回答，不要省略、不要
 
 ② 直接回答（答不出就明说答不出，**不许编**）：
    本机「主要项目」有哪几个？
-   挑其中一个（优先「樱境物语百宝箱」），说出它**最近一次记录是哪天**，
+   挑其中一个（优先「某个主要项目」），说出它**最近一次记录是哪天**，
    以及对应的**记录文件或产物的完整路径**。
 
 ③ 你刚才是怎么得到②的？调用了 MCP 工具，还是直接读了
-   `C:\\Users\\16564\\Agent资产总览\\` 目录下的文件？
+   `C:\\Users\\<用户名>\\Agent资产总览\\` 目录下的文件？
    把用到的工具名或文件路径**原样贴出来**。
 
 ④ 你每次开工必读的说明里，有没有指向 `Agent资产总览`
@@ -149,14 +149,15 @@ def _slug(name):
 
 
 READ_GUIDE_MARK = u"<!-- agent-inventory:read-guide -->"
-GUIDE_VERSION_MARK = u"<!-- guide-version: 5 -->"
+GUIDE_VERSION_MARK = u"<!-- guide-version: 7 -->"
 SKILL_REL = os.path.join(u"通用资源", "skills", "agent-inventory", "SKILL.md")
 
 READ_GUIDE_POINT = u'''## 先查后答（**每一轮都做，不要等对方提醒**）
 
 **每次收到消息，在回答之前先做这一步：**
-- **有 MCP**：先调 `inventory_index()`（一页目录，约 266 token），再按对方话里的
-  关键词调 `inventory_search(query="关键词", scope="records")`；**命中才细读**。
+- **有 MCP**：先调 `inventory_index()`（一页目录，约 266 token）。**目录页里有「主要项目」一节 ——
+  命中项目就直接 `inventory_project(name="…")` 拿全貌（已实现的功能 / 开发日志 / 产物），比全库捞更省**；
+  没命中再按关键词调 `inventory_search(query="关键词", scope="records")`，命中才细读。
 - **没有 MCP**：用你自己的搜索工具，拿对方话里的关键词在各家记录目录里搜一遍，
   **命中才打开文件**，别整篇读。
 - 完整目录清单与省 token 的查法见：
@@ -189,13 +190,14 @@ description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「�
 | `主要项目.json` | 用户划重点的项目：`name` / `keys` / `note` |
 | `agent_intros.json` | 各 Agent 的简介 |
 | 各 Agent 的**原生记录目录** | 就地索引，直接读（见下方清单） |
-| `通用资源\\工作记录\\<Agent>\\` | 各 Agent 主动整理的工作记录（人写的整理稿） |
 
 ## 二、怎么查（按需取用，**别整份读**）
 
 1. **总览**：`agent_inventory.json` 的条数 + `agents.json` 的 `agents[]`。
-2. **某项目做到哪一步**：读 `主要项目.json` 取关键词 → 在 `通用资源\\工作记录\\` 下递归搜关键词 →
-   命中的 .md 按**文件名里的日期**倒序读 → 产物路径就在记录正文里。
+2. **某项目做到哪一步**：**先看主要项目** —— `主要项目.json` 里 `name` / `keys` / `note`，
+   项目若带人工 `features` 清单，那就是最准的结论。拿它的关键词去
+   `inventory_search(query="关键词", scope="records")`（无 MCP 就用你自己的搜索工具，在第三节的
+   记录根里搜）→ **命中才打开文件**，产物路径就在记录正文里。
 3. **谁在什么时候干过什么**：`agents.json` 的 `tasks[]`。
 4. **有没有现成技能**：`agent_inventory.json` 的 `skills[]`，需要正文再读其 `path`。
 
@@ -212,6 +214,10 @@ description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「�
 **摘录缓存在** `%LOCALAPPDATA%\\Agent资产总览\\digest缓存\\`（可随时重建，不是唯一副本）。
 
 ## 四、触发时机（**每一轮都搜，不是等对方提醒**）
+
+> **最要紧的一条**：**动手写或改任何东西之前**，先 `inventory_skills(query="那件事的关键词")`
+> 查本机有没有现成技能 —— 例如做界面/视觉，先读 `taste-suite` 总纲再选一篇；
+> 别凭手感开工。（第五十三轮补：爱卿问"为什么没主动搜 skill"，这就是那条规矩。）
 
 **每次收到消息，回答之前先搜一遍** —— 不要等对方问「还记不记得……」：
 
@@ -249,7 +255,6 @@ description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「�
 | 5 | `~/.astrbot/data/workspaces/` | AstrBot 会话里产出的文件 |
 | 6 | `~/Desktop/*.md`、`*.txt` | 放在桌面上的文本 |
 | 7 | `%LOCALAPPDATA%\Agent资产总览\digest缓存\` | 大文件摘出来的可读文本（含 **AstrBot 的对话记忆**）|
-| 8 | `<应用目录>\通用资源\工作记录\<Agent>\` | 各 Agent 主动整理的记录稿 |
 
 **照着搜**：`Grep -r "关键词" <上表每个目录>` —— 一次搜全，别一个一个目录试。
 
@@ -314,7 +319,11 @@ PERSONA_POINT = (
     u"约 266 token），再按对方话里的关键词调 `inventory_search(query=\"关键词\", "
     u"scope=\"records\")`，命中才细读；没有 MCP 就用你自己的搜索工具，"
     u"在各家记录目录里搜关键词，命中才打开文件。服务名 `agent-inventory`；"
-    u"另外 `inventory_project`(项目全貌) / `inventory_recent`(近期动态) 按需用。")
+    u"另外 `inventory_project`(项目全貌) / `inventory_recent`(近期动态) 按需用。"
+    u"【更要紧的一条】**动手写或改任何东西之前**，先调 "
+    u"`inventory_skills(query=\"那件事的关键词\")` 看本机有没有现成技能 —— "
+    u"例如要做界面/视觉，先查设计类技能（taste-suite 那一家）；"
+    u"别凭手感开工。")
 def write_astrbot_persona(home):
     """把指针写进 AstrBot 当前默认人格的 system_prompt（在 data_v4.db 里）。
 
