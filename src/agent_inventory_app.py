@@ -104,7 +104,7 @@ def _skill_lib_default():
     return os.path.join(base, "通用资源", "skills")
 
 
-# 第二十一轮（爱卿令）：技能库收进应用内部；家目录那处留 Junction 兼容旧引用。
+# 第二十一轮（本版要求）：技能库收进应用内部；家目录那处留 Junction 兼容旧引用。
 _SKILL_LIB_CANDS = (_skill_lib_default(),
                     os.path.join(os.path.expanduser("~"), "agent-skills"))
 SKILL_LIB = next((c for c in _SKILL_LIB_CANDS if os.path.isdir(c)), _SKILL_LIB_CANDS[0])
@@ -298,7 +298,7 @@ SP_8 = _px(32)
 # 页面两侧的统一留白（页头、指标条、卡片区一律对齐这条线）
 PAGE_X = _px(28)
 
-# 首页右上角那张配图（爱卿令）：等比例缩到与「页头 + 统计条」齐平，
+# 首页右上角那张配图（本版要求）：等比例缩到与「页头 + 统计条」齐平，
 # 统计条相应向左收窄给它腾位。文件不在就当没有这张图，不影响启动。
 HOME_ART_DIR = ""          # 想放一张首页配图，就把目录填这儿（留空=不显示）
 HOME_ART_STEM = "777"
@@ -445,7 +445,7 @@ def _icon_dominant_color(path, fallback="#2f7fe0"):
         return fallback
 
 # 工作记录全库检索：哪些文件算「工作/对话历史」，以及扫多大。
-# （爱卿令：搜索框要能翻遍各 Agent 的工作记录，好知道某个项目出自谁手）
+# （本版要求：搜索框要能翻遍各 Agent 的工作记录，好知道某个项目出自谁手）
 HIST_EXTS = (".md", ".txt", ".json", ".jsonl", ".py", ".js", ".ts", ".html", ".htm",
              ".csv", ".log", ".bat", ".cmd", ".ps1", ".sh", ".yaml", ".yml",
              ".toml", ".ini", ".cfg", ".sql", ".java", ".kt", ".xml")
@@ -467,7 +467,7 @@ TIP_TEXT = {
     "重新扫描": "重新检索本机，刷新这份名册",
     "接入 Agent": "给各 Agent 接上 MCP 检索、并在它每次必读处放一行指针；内含测试提示词",
     "检索地址": "登记这个 Agent 自己的记忆/记录目录（让它自报家门，把路径粘进来）",
-    # 第四十一轮（爱卿令）：把「接入 Agent」窗里那几枚按钮的作用写清楚
+    # 第四十一轮（本版要求）：把「接入 Agent」窗里那几枚按钮的作用写清楚
     "立即接入/重新复检": "现在就把各 Agent 接一遍（接 MCP、放读取指引），"
                         "并把结果重新检查——哪些接了、哪些没接、为什么",
     "复制测试提示词": "复制一段自检提示词：粘给任意 Agent，看它到底通没通"
@@ -859,7 +859,7 @@ def _is_local(obj):
 def cold_scan(force=False):
     """开箱自检：名册若缺、若为**他机所产**、或 `force`，就地全量扫描一次并入盘。
 
-    爱卿之命 ——「在新电脑打开时，自动完成检索并生成对应的按钮」。
+    作者之命 ——「在新电脑打开时，自动完成检索并生成对应的按钮」。
     新机上这两份 json 本不存在，或只有随包带来的**他机底册**，故须开窗之前先扫：
       · `agent_inventory.json` —— 技能 / MCP / 工具（由 scan_agents.py 采）
       · `agents.json`          —— Agent 客户端与兵站工具（由 scan_agents_apps.py 采）
@@ -944,7 +944,7 @@ def cold_scan(force=False):
 
 
 # ---------- 自订简介（可编辑） ----------
-# 第二十二轮（爱卿令）：给 Agent 加可编辑的简介栏。
+# 第二十二轮（本版要求）：给 Agent 加可编辑的简介栏。
 # 要紧之处：扫描器每次重扫都会重写 agents.json，编辑若存那儿必被冲掉，
 # 故自订简介另存一份 `agent_intros.json`，按 agent 的 key 索引。
 INTROS_NAME = "agent_intros.json"
@@ -1004,7 +1004,7 @@ class App(tk.Tk):
         _sw, _sh = self.winfo_screenwidth(), self.winfo_screenheight()
         _w = min(_px(1180), max(_px(700), _sw - _px(40)))
         _h = min(_px(760), max(_px(460), _sh - _px(80)))
-        # 第五十轮（爱卿令：让这个窗口聪明点）：**记住上次的尺寸与位置** ——
+        # 第五十轮（本版要求：让这个窗口聪明点）：**记住上次的尺寸与位置** ——
         #   否则每次开都是默认大小、还要自己拖。记住的几何也要夹进当前屏幕
         #   （换了显示器/缩放了也不至于开到屏幕外）。
         _geo = self._load_window_geo()
@@ -1030,7 +1030,7 @@ class App(tk.Tk):
         self.configure(bg=BG)
         self._set_window_icon()
 
-        # 第六十二轮（爱卿令）：页头右上角可摆一张配图——**右边缘与窗口右边缘重合**。
+        # 第六十二轮（本版要求）：页头右上角可摆一张配图——**右边缘与窗口右边缘重合**。
         #   原图 1216×1632（3:4 竖图），按页头那条带子的高度**等比例缩小**到
         #   103×138 物理像素（=69×92 逻辑像素），用 place(relx=1.0, anchor="ne") 钉在右上角：
         #   窗口怎么拉、怎么缩，它始终贴着右边、垂直位置不变。
@@ -1095,7 +1095,7 @@ class App(tk.Tk):
         except Exception:
             pass
         self._tips_on_class()        # 悬停说明：按控件类接管，此后新造的按钮也自动受管
-        # 第六十二轮（爱卿令）：首页那张配图也挂一句悬停说明
+        # 第六十二轮（本版要求）：首页那张配图也挂一句悬停说明
         try:
             if getattr(self, "_home_art_lb", None) is not None:
                 self._tip(self._home_art_lb, u"", side="left")
@@ -1325,7 +1325,7 @@ class App(tk.Tk):
     def _build_home_art(self):
         """首页右上角配图：按比例缩到与「页头 + 统计条」同高，返回它的宽度。
 
-        爱卿令：图放右上角、右边缘贴窗口右缘；统计条向左缩小腾位。
+        本版要求：图放右上角、右边缘贴窗口右缘；统计条向左缩小腾位。
         图缺失 / 没装 PIL 都**静默跳过**（返回 0）—— 装饰不该成为启动的前提。
         """
         path = ""
@@ -1364,7 +1364,7 @@ class App(tk.Tk):
         self._home_art_lb = lb
         lb.place(relx=1.0, x=(0 if HOME_ART_BLEED else -PAGE_X), y=0, anchor="ne")
         self._home_art_w = w
-        # 那条粗黑线（爱卿令）：从窗口左边缘拉过去，右端压进图里 2px 与黑条接上，
+        # 那条粗黑线（本版要求）：从窗口左边缘拉过去，右端压进图里 2px 与黑条接上，
         # 于是「线 + 图上的桌沿」连成一条从左到右贯通的粗黑线。
         if HOME_RULE and _band:
             _rh = max(3, int(round(_band * h / float(max(1, _h0)))))
@@ -1377,7 +1377,7 @@ class App(tk.Tk):
     # ---------- 指标条 ----------
     def _build_metrics(self, parent):
         wrap = ttk.Frame(parent)
-        # 第五十九轮（爱卿令）：统计条向右少占一块，给右上角那张配图腾位
+        # 第五十九轮（本版要求）：统计条向右少占一块，给右上角那张配图腾位
         _pw = getattr(self, "_home_art_w", 0)
         wrap.pack(fill="x", pady=(0, SP_4),
                   padx=(0, (_pw + SP_3) if _pw else 0))
@@ -1387,7 +1387,7 @@ class App(tk.Tk):
 
     def _metric_values(self):
         return [
-            # 只数真 Agent（客户端）；兵站工具与说明文档不计入（爱卿令）
+            # 只数真 Agent（客户端）；兵站工具与说明文档不计入（本版要求）
             ("Agents", len([a for a in self.agents
                             if (a.get("kind") or "agent") == "agent"
                             and a.get("exists")])),
@@ -1452,7 +1452,7 @@ class App(tk.Tk):
             return False
 
     def _auto_onboard(self):
-        """扫描结束后：**发现新 Agent 就自动给它接 MCP、放指针**（爱卿令，写进应用里）。"""
+        """扫描结束后：**发现新 Agent 就自动给它接 MCP、放指针**（本版要求，写进应用里）。"""
         try:
             import agent_onboard
             if not self._load_settings().get("auto_attach", True):
@@ -1472,7 +1472,7 @@ class App(tk.Tk):
     def onboard_dialog(self, agent=None):
         """接入 Agent：接 MCP、放指针、开关、以及**可复制的测试提示词**。
 
-        第五十九轮（爱卿令）：从首页搬进各 Agent 的工作台 —— 传了 agent 就
+        第五十九轮（本版要求）：从首页搬进各 Agent 的工作台 —— 传了 agent 就
         **只办这一个**（标题、文案、接入范围都跟着它走）；不传仍是全体模式
         （MCP 状态窗里那枚「去接入 Agent」、卡上「人格」灯仍走这条老路）。
         """
@@ -1772,7 +1772,7 @@ class App(tk.Tk):
     def _integration_line(self, agent):
         """工作台右上角那句：这家 Agent 与应用的**接入程度**（四盏灯 + 备注）。
 
-        第四十六轮（爱卿之令）：卡片上打灯，点进来这里给细账。
+        第四十六轮（本版要求）：卡片上打灯，点进来这里给细账。
         """
         it = (agent or {}).get("integration") or {}
         if not it:
@@ -1938,7 +1938,7 @@ class App(tk.Tk):
         spec.loader.exec_module(mod)
         return mod
 
-    # 第六十轮（爱卿令）：record_sources_dialog 整段删除 ——
+    # 第六十轮（本版要求）：record_sources_dialog 整段删除 ——
     #   那些「记录长在哪」已经在各 Agent 的工作台里常态摊开了，主页的没用了。
     # ---------- 快捷键 ----------
     def _bind_shortcuts(self):
@@ -1999,7 +1999,7 @@ class App(tk.Tk):
     def _project_records(self, proj):
         """某项目的**全部**相关记录。
 
-        爱卿之令：「既然是主要项目，必然是经历了一个或多个 agent 接力对话打造的」——
+        本版要求：「既然是主要项目，必然是经历了一个或多个 agent 接力对话打造的」——
         故不能只看任务池里那点摘要（摘要只截了 400 字，藏在长文里的就漏了），
         还要**逐字翻遍各 Agent 工作记录夹里的每一个文件**，把提到该项目的一网打尽。
         结果缓存 60 秒，免得每次重绘都翻一遍盘。
@@ -2111,7 +2111,7 @@ class App(tk.Tk):
     def _edit_project_features(self, proj, after=None):
         """编「我划的重点」：一个项目一段人工清单，存进 主要项目.json 的 features。
 
-        第六十一轮（爱卿令）：主要项目＝**用户手选的整理层**，人工清单**优先于**
+        第六十一轮（本版要求）：主要项目＝**用户手选的整理层**，人工清单**优先于**
         自动摘录 —— 一份写好的清单，比让每个 Agent 什么都整理一遍更省、更准。
         """
         dlg = tk.Toplevel(self)
@@ -2182,7 +2182,7 @@ class App(tk.Tk):
     def projects_dialog(self):
         """主要项目设置：**列表式，想加几条加几条**，随时增删改。
 
-        第三十一轮（爱卿令）：从前是个多行文本框，看不出「加一条 / 删一条」该怎么办，
+        第三十一轮（本版要求）：从前是个多行文本框，看不出「加一条 / 删一条」该怎么办，
         且保存时会把项目备注等字段弄丢。今改列表式：每行一条，配 添加 / 编辑 / 删除。
         """
         dlg = tk.Toplevel(self)
@@ -2589,7 +2589,7 @@ class App(tk.Tk):
     def _scan_history(self, q):
         """翻遍**每个 Agent 的原生记录根**，找含该关键字词的文件与行号。
 
-        第五十五轮（爱卿令）：应用内那格工作记录夹已废 —— 改读各家原生位置
+        第五十五轮（本版要求）：应用内那格工作记录夹已废 —— 改读各家原生位置
         （就地索引的来源），一条都不复制。只认文本类扩展名、单文件 ≤3 MB。
         """
         hits = []
@@ -2726,7 +2726,7 @@ class App(tk.Tk):
     def _tip(self, widget, text, side="top"):
         """给一枚控件挂上「悬停即弹一句话」的说明。
 
-        第六十二轮（爱卿令）加 `side`：默认仍在**正上方**（谁也不动），
+        第六十二轮（本版要求）加 `side`：默认仍在**正上方**（谁也不动），
         传 "left" 则贴在控件**左侧**纵中处 —— 首页那张配图要的就是左边。
         """
         if not text:
@@ -2808,7 +2808,7 @@ class App(tk.Tk):
         outer.pack(fill="x")
         self._build_metrics(outer)
 
-        # 第十五轮（爱卿令）：一排页签加搜索框再挂四枚按钮，窗口一窄，
+        # 第十五轮（本版要求）：一排页签加搜索框再挂四枚按钮，窗口一窄，
         # 右边那几枚就被裁在窗外 —— 「重新扫描」看得见名字点不着。
         # 此处把整条塞进横向 Canvas：装不下就露一条横向滚动条，滑轮也能滚，
         # 非全屏照样点得到；装得下时滚动条自动收起，观感与从前无异。
@@ -2859,7 +2859,7 @@ class App(tk.Tk):
         self._bar_sync_region()
 
         # ---------- 第二行：当前栏自己的动作（跟着页签走） ----------
-        # 第三十轮（爱卿令）：主界面按钮太多，按栏目归类 ——
+        # 第三十轮（本版要求）：主界面按钮太多，按栏目归类 ——
         #   Agents      → ＋ 添加 Agent（接入 Agent、记录来源 都已移进工作台）
         #   技能        → ＋ 导入 Skill
         #   主要项目    → 设置主要项目
@@ -2874,8 +2874,8 @@ class App(tk.Tk):
         self.btn_add = ttk.Button(self.act_bar, text="＋ 添加 Agent",
                                   style="Tab.TButton",
                                   command=self.add_agent_dialog)
-        # 第六十轮（爱卿令）：「记录来源」撤除 —— 内容已在各 Agent 的工作台
-        # 第五十九轮（爱卿令）：「接入 Agent」搬进各 Agent 的工作台，本栏不再放
+        # 第六十轮（本版要求）：「记录来源」撤除 —— 内容已在各 Agent 的工作台
+        # 第五十九轮（本版要求）：「接入 Agent」搬进各 Agent 的工作台，本栏不再放
         self.btn_skill = ttk.Button(self.act_bar, text="＋ 导入 Skill",
                                     style="Act.TButton",
                                     command=self.import_skill_dialog)
@@ -3050,8 +3050,8 @@ class App(tk.Tk):
     def _cat_has_content(self, key):
         """这一栏有没有真东西？
 
-        爱卿之令（第十四轮）：「空栏目连着页签一起隐去」。
-        · Agents —— **常驻**，一台没有也留着（爱卿令：空栏里写提示
+        本版要求（第十四轮）：「空栏目连着页签一起隐去」。
+        · Agents —— **常驻**，一台没有也留着（本版要求：空栏里写提示
           「未检测到 agent，请重新扫描或手动导入」）；本工具自身自第十八轮起
           不再上榜，所以空栏时确实可能是真的空；
         · 其余四栏 —— 清单里对应的条数。
@@ -3827,7 +3827,7 @@ class App(tk.Tk):
                 ok = a.get("exists")
                 kind = a.get("kind", "agent")
                 # 兵站工具（kind=tool）与说明文档（kind=doc）本非 Agent，
-                # 原先误归此栏，爱卿令删 —— 此处直接拦下，不进 Agents 栏。
+                # 原先误归此栏，本版要求删 —— 此处直接拦下，不进 Agents 栏。
                 if kind in ("tool", "doc"):
                     continue
                 desc = a.get("desc", "")
@@ -3842,7 +3842,7 @@ class App(tk.Tk):
                                          a.get("source", "")) if t],
                     "icon": a.get("icon", ""),
                     "key": a.get("key", ""),
-                    # 自订简介（爱卿可编辑）；没有则空串，卡片退回扫描到的说明
+                    # 自订简介（作者可编辑）；没有则空串，卡片退回扫描到的说明
                     "intro": self.intros.get(a.get("key") or "", ""),
                     "agent": a,
                     "kind": kind,
@@ -3916,7 +3916,7 @@ class App(tk.Tk):
                     "tags": [str(m.get("client", ""))],
                 })
         # —— 整合卡：入口目录里有 *.suite.json 的，把 members 收进它怀里 ——
-        # 第二十六轮（爱卿令）：应用里只露入口那一张卡，13 篇同源技能都收进去。
+        # 第二十六轮（本版要求）：应用里只露入口那一张卡，13 篇同源技能都收进去。
         if cat == "skills":
             entries, hidden = {}, set()
             for r in out:
@@ -3988,7 +3988,7 @@ class App(tk.Tk):
         self.rows = self.collect()
 
         if not self.rows:
-            # 第十八轮（爱卿令）：一台 Agent 都没有时，Agents 栏不许整栏消失，
+            # 第十八轮（本版要求）：一台 Agent 都没有时，Agents 栏不许整栏消失，
             # 就地写明缘由，并把两条出路做成按钮摆在这儿。
             # 注意：只因搜索词没命中时不走这条 —— 那是「筛没了」，不是「本机没有」。
             if self.cat == "agents" and not self.var_q.get().strip():
@@ -4073,7 +4073,7 @@ class App(tk.Tk):
             cell.grid(row=grow, column=i % cols, sticky="nsew",
                       padx=SP_2, pady=(0, 0))
 
-        # 行间只留空白间隔，**不铺搁板横线**（爱卿明令去掉那些灰横线）
+        # 行间只留空白间隔，**不铺搁板横线**（作者明令去掉那些灰横线）
         for k in range(nrow - 1):
             gap = tk.Frame(self.inner, bg=BG, height=SP_4)
             gap.grid(row=k * 2 + 1, column=0, columnspan=cols, sticky="ew")
@@ -4091,7 +4091,7 @@ class App(tk.Tk):
     def _cols_for(self, cw):
         """按画布宽定列数。
 
-        第五十三轮（爱卿令：回到一行两张）—— 原式 `cw // _px(430)` 有个缝：
+        第五十三轮（本版要求：回到一行两张）—— 原式 `cw // _px(430)` 有个缝：
         本应用允许的最小窗宽是 900（逻辑像素），而「两列」需要
         2×430 + 左右留白 ≈ 965 —— 于是窗口一旦被记成最小尺寸，画布宽就
         差着 3% 掉到 1 列，卡片瞬间涨成一张巨卡（开窗第一帧还看不出，
@@ -4213,7 +4213,7 @@ class App(tk.Tk):
         glass.add_content(title, tx, Y_ICON, width=glass._cw - tx - SP_4,
                           height=_px(30))
 
-        # 描述：**自订简介优先**（爱卿可编辑），没写才退回扫描到的说明。
+        # 描述：**自订简介优先**（作者可编辑），没写才退回扫描到的说明。
         # 第二十三轮：卡上不再摆编辑入口 —— 编辑挪进「点进来的详情页」，
         # 卡片恢复原高度与原宽度，简介在这儿只作展示。
         # 注意：Tk 的 Label 不给 wraplength 就**不会折行**，只会单行截断。
@@ -4240,7 +4240,7 @@ class App(tk.Tk):
         # 名下挂着工作区散件者，在标题右上角缀一枚小徽标，提示「点开有东西看」
         n_works = len((r.get("agent") or {}).get("works") or []) \
             if is_agents else 0
-        # 第四十六轮（爱卿之令）：按「接进应用数据的程度」在卡片上打四盏灯 ——
+        # 第四十六轮（本版要求）：按「接进应用数据的程度」在卡片上打四盏灯 ——
         #   记录 / 人格（每轮先查的指针）/ MCP（注册且受信）/ 地址（登记的检索地址）
         #   ● 亮 ｜ ◐ 半（注册了但客户端受信门槛拦着）｜ ○ 暗
         if is_agents:
@@ -4264,7 +4264,7 @@ class App(tk.Tk):
                     u"人格": u"点开「接入 Agent」：接 MCP、放「每轮先查再答」指针、取自检提示词",
                     "MCP": u"点开「MCP 状态」：它的 MCP 配置在哪、注册了没、要不要在客户端里受信",
                 }
-                # 第四十八轮（爱卿令）：去掉「地址」那盏灯 —— 自报家门只是让
+                # 第四十八轮（本版要求）：去掉「地址」那盏灯 —— 自报家门只是让
                 #   「记录」灯亮起来的**手段之一**，本身不是结果；登记的地址本就
                 #   算在记录根里，记录灯亮就说明含它在内。手段不该占一格。
                 for nm, on, half in (
@@ -4328,7 +4328,7 @@ class App(tk.Tk):
                           height=_px(20))
 
         # 右下角那枚淡字：有工作台者写「工作台」，可启动者写「点击启动」，其余写「详情 ›」
-        # （**不是按钮**，爱卿已令撤去按钮；此处只是文字暗示）
+        # （**不是按钮**，作者已令撤去按钮；此处只是文字暗示）
         if is_agents and r.get("has_works"):
             hint_text = "工作台 ›"
         elif is_agents and r.get("clickable"):
@@ -4514,7 +4514,7 @@ class App(tk.Tk):
     def start_agent(self, agent):
         """点 Agent 卡：立刻弹「正在启动，请稍后…」小窗，再于后台启动。
 
-        小窗一出，点击便有了回响，爱卿不至于疑心没点到而反复点。
+        小窗一出，点击便有了回响，作者不至于疑心没点到而反复点。
         """
         if getattr(self, "_launching", False):
             return                       # 已有一次启动在途，不理重复点击
@@ -4683,14 +4683,14 @@ class App(tk.Tk):
         return dlg
 
     # ---------- 详情窗 ----------
-    # 第五十五轮（爱卿令）：_works_dir_of / _update_data / _prompt_float
+    # 第五十五轮（本版要求）：_works_dir_of / _update_data / _prompt_float
     #   随「应用内一格工作记录夹」整体删除 —— 本体的东西就地读，不收进应用。
 
     # ---------- 详情页顶部的「简介栏」 ----------
     def _intro_bar(self, parent, row):
         """把该 Agent 的简介整段摊在页面顶部，右侧配「查看/编辑简介」。
 
-        爱卿令（第二十三轮）：卡上不摆编辑入口，编辑挪进点进来的页面；
+        本版要求（第二十三轮）：卡上不摆编辑入口，编辑挪进点进来的页面；
         同一段简介在此再显示一份全文（卡片上那处只放得下三行）。
         保存后就地刷新，不必关窗重开。
         """
@@ -4769,7 +4769,7 @@ class App(tk.Tk):
     def _record_roots_of(self, agent):
         """该 Agent 的**原生记录根**（通配已展开）—— 就地读的来源。
 
-        第五十五轮（爱卿令）：应用内那格工作记录夹已废，记录一律直接从这儿读。
+        第五十五轮（本版要求）：应用内那格工作记录夹已废，记录一律直接从这儿读。
         """
         out = []
         try:
@@ -4815,7 +4815,7 @@ class App(tk.Tk):
     def open_workspace(self, row):
         """打开某个 Agent 的「工作台」：本体在哪、记录都长在哪些位置。
 
-        第五十六轮（爱卿令）——按钮收成两枚，地址清单常态摊开：
+        第五十六轮（本版要求）——按钮收成两枚，地址清单常态摊开：
           · 「打开本体目录」：一键开这个 Agent 所在的**总目录**；
           · 「手动添加」：把原〔＋添加检索地址〕与〔复制自报家门问话〕并成一处
             （本就是同一件事：不认识它的目录结构时，让 Agent 自己把位置报出来），
@@ -4846,7 +4846,7 @@ class App(tk.Tk):
                  font=F_DLG_T, anchor="w").pack(side="left")
         tk.Label(head, text="本 Agent 在本机的工作区文件", bg=SOFT, fg=INFO,
                  font=F_TAG).pack(side="left", padx=(10, 0))
-        # 第五十四轮（爱卿令）：启动键在页头，紧挨标题那一行。
+        # 第五十四轮（本版要求）：启动键在页头，紧挨标题那一行。
         if agent.get("exe"):
             ttk.Button(head, text="启动 %s" % agent.get("name", ""),
                        style="Tab.TButton",
@@ -4876,7 +4876,7 @@ class App(tk.Tk):
                               command=lambda: toggle_add())
         _add_btn.pack(side="left", padx=(6, 0))
         self._tip(_add_btn, u"添加记忆信息供其他 agent 浏览")
-        # 第五十九轮（爱卿令）：从首页搬过来的「接入 Agent」，在这儿只办这一个
+        # 第五十九轮（本版要求）：从首页搬过来的「接入 Agent」，在这儿只办这一个
         _onb_btn = ttk.Button(bar, text="接入 Agent", style="Tab.TButton",
                               command=lambda: self.onboard_dialog(agent))
         _onb_btn.pack(side="left", padx=(6, 0))
@@ -4907,7 +4907,7 @@ class App(tk.Tk):
         txt.tag_configure("link", font=F_DLG_M, foreground=INFO, underline=True,
                           lmargin1=_px(20), lmargin2=_px(20))
         txt.tag_configure("desc", font=F_DLG, foreground=DIM, lmargin1=20, lmargin2=20)
-        # 第五十八轮（爱卿令：美化这一栏）—— 原先 h2 / sub / sessT / sessLab / hair
+        # 第五十八轮（本版要求：美化这一栏）—— 原先 h2 / sub / sessT / sessLab / hair
         #   一个都没配样式，标题、路径、备注、分隔线全落回默认字体与纯黑，
         #   层级看不出来、线也太重。今按「标题—路径—备注」三级重排，
         #   发丝线改用描边色，间距走 8 的倍数。
@@ -5064,7 +5064,7 @@ class App(tk.Tk):
         def toggle_add():
             """「手动添加检索地址」：摊开 / 收起那一层提示（提示词 + 选目录入口）。
 
-            第五十七轮（爱卿令）：收起时**连位子一起撤**（pack_forget）——
+            第五十七轮（本版要求）：收起时**连位子一起撤**（pack_forget）——
             先前只销毁里面的东西，空 Frame 还占着原本那块高度，中间就空一块。
             """
             if hint_box.winfo_manager():
@@ -5241,7 +5241,7 @@ class App(tk.Tk):
         if row.get("proj"):
             pr = row["proj"]
             hit = row.get("_tasks") or []
-            # 第六十一轮（爱卿令）：**人工清单优先** —— 主要项目就是「用户手选的整理层」，
+            # 第六十一轮（本版要求）：**人工清单优先** —— 主要项目就是「用户手选的整理层」，
             #   自动摘录只当线索；哪一段是人工的，页面上直接标出来。
             _man = pr.get("features") if isinstance(pr.get("features"), list) else []
             _man = [str(x).strip() for x in _man if str(x).strip()]
@@ -5382,7 +5382,7 @@ class App(tk.Tk):
         if row.get("meta"):
             field("路径", row.get("meta"))
         # 安卓兵站的家底：原「工具与运行时」栏里唯一对干活有帮助的信息，
-        # 现并到它对应的 MCP 条目底下（爱卿令：删栏，有用的并过来）。
+        # 现并到它对应的 MCP 条目底下（本版要求：删栏，有用的并过来）。
         _cmd = row.get("meta") or ""
         if row.get("title") == "replicant" and "安卓模拟器MCP" in _cmd:
             _root = os.path.dirname(os.path.dirname(_cmd))
@@ -5621,7 +5621,7 @@ class App(tk.Tk):
 
 
 # ---------- 单实例：已有窗口就把它提到前台，别再开一个（第五十一轮） ----------
-# 爱卿之令：连点应用程序会弹出一堆一模一样的主界面 —— 应该把已有窗口前置。
+# 本版要求：连点应用程序会弹出一堆一模一样的主界面 —— 应该把已有窗口前置。
 # 做法：命名互斥体判「是否已有实例」+ 抢前台（Windows 的前台锁要用
 #   AttachThreadInput 绕，这是老办法里最稳的一条；不成再闪任务栏提示）。
 _SINGLE_MUTEX = None          # 句柄必须留着，不然互斥体被回收，闸门就废了
@@ -5762,7 +5762,7 @@ def _hide_console():
 
 
 def main():
-    # 第三十三轮（爱卿令：直接上 MCP）：同一枚 exe 兼两个身份 ——
+    # 第三十三轮（本版要求：直接上 MCP）：同一枚 exe 兼两个身份 ——
     # 不带参数是图形界面；带 --mcp 则作 MCP 服务端（stdio），
     # 任何支持 MCP 的 Agent 都能直接检索本应用整合的信息。
     if "--mcp" in sys.argv:

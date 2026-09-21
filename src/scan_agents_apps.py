@@ -89,7 +89,7 @@ KNOWN = [
         "exe": r"@HOME@\AppData\Local\Programs\Codex++\codex-plus-plus-manager.exe",
         "icon": "codexplus_manager.png",
         "category": "管理面板",
-        # 爱卿明令：此乃管理工具，不算 Agent 本体，不上架
+        # 作者明令：此乃管理工具，不算 Agent 本体，不上架
         "hidden": True,
     },
     {
@@ -107,7 +107,7 @@ KNOWN = [
         "exe": r"@HOME@\AppData\Local\AstrBot Launcher\astrbot-launcher.exe",
         "icon": "astrbot_launcher.png",
         "category": "聊天机器人",
-        # 爱卿明令：此乃启动器，不算 Agent 本体，不上架
+        # 作者明令：此乃启动器，不算 Agent 本体，不上架
         "hidden": True,
     },
     {
@@ -143,7 +143,7 @@ def _icon_exists(name):
 
 
 # ---------- 1.4 全盘寻真身：只要在，就一定找得着 ----------
-# 爱卿之令（2026-09-18 第十四轮）：
+# 本版要求（2026-09-18 第十四轮）：
 #   「不应该出现这个问题，只要在就一定能找到」
 # 缘由：登记表里那条**死路径**未必与真身相符 —— 真身可能改了名、换了目录
 # （AstrBot 尤甚：`astrbot-desktop-tauri.exe` 只是它诸多版本之一的名）。
@@ -255,10 +255,10 @@ def deep_find(key, hint_dir=None):
 
 
 # ---------- 1.45 手动添入的 Agent ----------
-# 爱卿之令（第十四轮）：「或者添加一个可以手动添加Agent的功能」
-# 自动探法纵有全盘搜兜底，仍可能有漏（或爱卿想收一枚本工具不认识的）。
+# 本版要求（第十四轮）：「或者添加一个可以手动添加Agent的功能」
+# 自动探法纵有全盘搜兜底，仍可能有漏（或作者想收一枚本工具不认识的）。
 # 存 %LOCALAPPDATA%\Agent 资产总览\manual_agents.json —— **不动程序旁**，
-# 免得工作区与桌面又多出散件（符爱卿「桌面只留一枚 exe」之旨）。
+# 免得工作区与桌面又多出散件（符作者「桌面只留一枚 exe」之旨）。
 def manual_store_path():
     base = os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local")
     d = os.path.join(base, "Agent 资产总览")
@@ -364,7 +364,7 @@ SKILL_LIB_DIR = _skill_lib_dir()
 # ---------- 1.5 兵站工具：不是客户端，而是装在机器上的工具箱 ----------
 # 这些既非 skill 也非 MCP，是**给人/给 AI 用的实体程序**，散在 agent-tools 与
 # android-agent-env 两座兵站里，不扫客户端配置便发现不了。故单列一张表。
-# 第二十五轮（爱卿令）：「工具与运行时」一栏撤除后，这张表也撤了 ——
+# 第二十五轮（本版要求）：「工具与运行时」一栏撤除后，这张表也撤了 ——
 # 它登记的四件「命名工具」在界面上本来就不显示（Agents 栏拦 kind=tool，
 # 工具栏又读的是另一份数据），纯死数据。其中安卓那三件的信息
 # （兵站根目录、自带运行时、安卓操作台、dockerify）已并入 MCP 条目的详情；
@@ -372,10 +372,10 @@ SKILL_LIB_DIR = _skill_lib_dir()
 
 
 # ---------- 1.6 说明文档：那些「给人看」的长文 ----------
-# 爱卿原先在桌面自建【Agent通用工具一览】收纳夹，装各工具的说明书。
+# 作者原先在桌面自建【Agent通用工具一览】收纳夹，装各工具的说明书。
 # 第八轮：正文已收入名册，桌面收纳夹遂撤（移入回收站）。
 # 为免「夹子一撤、正文陪葬」，正文另存工作区 说明文档\ 存档，此处为第一顺位。
-# 桌面路径仍列第二，若爱卿日后又想往那里丢新说明，照收不误。
+# 桌面路径仍列第二，若作者日后又想往那里丢新说明，照收不误。
 DOC_DIRS = [
     os.path.join(HERE, "说明文档"),
     os.path.join(HOME, "Desktop", "Agent通用工具一览"),
@@ -455,7 +455,7 @@ def _file_note(p):
 def collect_workspace():
     """把工作区里的散件收进名册，挂在 **WorkBuddy** 的名下。
 
-    爱卿之意（第十五轮）——「把工作区的所有项目文件地址统一放到与你的名字
+    本版初衷（第十五轮）——「把工作区的所有项目文件地址统一放到与你的名字
     对应的 WorkBuddy 那个 Agent 的页面下，别的 Agent 想接力时一眼看全」。
     故此处收的是「工作成果」：源码、规格、快捷批处理、文稿、图片、图标、备份包。
     数据产物（两份名册）与目录（说明文档 / 备份 / 便携数据 / 图标夹）另有去处，
@@ -578,8 +578,8 @@ def _norm(name):
 
 
 # 上架黑名单：这些名字一律不许出现在名册里。
-# 爱卿明令：Codex++ 管理工具、AstrBot Launcher 皆非 Agent 本体，从页面除名。
-# 第十八轮：本工具自身亦已除名（爱卿令：「本应用栏根本不是 agent」）。
+# 作者明令：Codex++ 管理工具、AstrBot Launcher 皆非 Agent 本体，从页面除名。
+# 第十八轮：本工具自身亦已除名（本版要求：「本应用栏根本不是 agent」）。
 BLOCK_NAMES = [
     "codex++管理工具",
     "codex++manager",
@@ -597,7 +597,7 @@ def _blocked(name):
 
 
 # 本工具自身：桌面那枚快捷方式指向的就是本程序，不必再给自己上架一次。
-# （第十八轮：爱卿令「本应用栏根本不是 agent」，内置登记之外，这枚同名快捷方式
+# （第十八轮：本版要求「本应用栏根本不是 agent」，内置登记之外，这枚同名快捷方式
 #   也会扫出一张一模一样的卡，故一并拦下。）
 SELF_LNK = ("agent资产总览", "agent 资产总览")
 
@@ -655,7 +655,7 @@ def probe_shortcuts():
 
 
 # ---------- 自动抄录：各 Agent 的工作日志源（第二十七轮） ----------
-# 爱卿令：扫描定位到 Agent 的同时记下它的工作数据文件夹，发现更新就自动抄进应用，
+# 本版要求：扫描定位到 Agent 的同时记下它的工作数据文件夹，发现更新就自动抄进应用，
 # 免得每次都要手动叫 agent 总结记录。
 # 三件事：
 #   ① 记下每个 Agent 的日志源（下列表，数据驱动，加源不必改代码）；
@@ -674,7 +674,7 @@ LOG_DIGEST_MAX = 300 * 1024        # 摘录单篇上限
 
 
 # ---------- 工作任务及产物一览（第二十八轮） ----------
-# 爱卿令：把各 Agent 的任务/会话整理成单独一览；点进去看「做了什么、谁参与、
+# 本版要求：把各 Agent 的任务/会话整理成单独一览；点进去看「做了什么、谁参与、
 # 产出了什么」，有产物就给**明确地址**。
 # 原料＝自动抄录下来的那堆日志（工作记录\<Agent>\自动抄录\<来源>\…）：
 #   · 一份日志（.md 之类） = 一个任务
@@ -744,7 +744,7 @@ def _task_artifacts(text, extra_paths=None):
 
 
 # ---------- 记录根登记表（第三十七轮：就地索引取代抄录） ----------
-# 爱卿之见：既然各家 Agent 的记录本来就长在各自的目录里，何必再抄一份？
+# 作者之见：既然各家 Agent 的记录本来就长在各自的目录里，何必再抄一份？
 # 故改成「指名各家的记录根，搜索 / 工作台 / MCP **就地读**」：
 #   · 新写的内容立刻可查（不必等一轮抄录）
 #   · 再不会出现「源漏写一处 ⇒ 那类记录永远抄不到」（本宫栽过两次）
@@ -762,7 +762,7 @@ RECORD_ROOTS = {
         {"name": "WorkBuddy 长期记忆",
          "root": os.path.join(HOME, ".workbuddy", "memory"),
          "mode": "direct"},
-        # 第四十三轮（爱卿指路）：WorkBuddy 的**完整会话存档**在
+        # 第四十三轮（作者指路）：WorkBuddy 的**完整会话存档**在
         #   ~/.workbuddy/projects/<项目>/<会话>.jsonl —— 一个会话一个文件，
         #   单个可达 12 MB（不是给人读的），故走摘录一档；
         #   同目录下的 .txt 是可读的，走直读。
@@ -783,7 +783,7 @@ RECORD_ROOTS = {
         {"name": "AstrBot 会话工作区",
          "root": os.path.join(HOME, ".astrbot", "data", "workspaces"),
          "mode": "direct"},
-        # 第四十二轮（爱卿令：WorkBuddy 找不到"叫你写题"那件事）——
+        # 第四十二轮（本版要求：WorkBuddy 找不到"叫你写题"那件事）——
         #   AstrBot 的**对话内容**不在文件里，在 data_v4.db 的 conversations 表里
         #   （16 行、56 MB 的 JSON）。先前只登记了 workspaces（干活的产物），
         #   于是"聊过什么"这一层完全检索不到。此处补上，走**摘录**一档：
@@ -805,7 +805,7 @@ RECORD_ROOTS = {
          "root": os.path.join(os.environ.get("APPDATA", ""), "Grok Bot"),
          "mode": "skip"},
     ],
-    # 桌面：爱卿习惯把记录直接放桌面 —— 直读（只收 .md/.txt，不复制、不搬走）
+    # 桌面：作者习惯把记录直接放桌面 —— 直读（只收 .md/.txt，不复制、不搬走）
     "desktop": [
         {"name": "桌面文本记录", "root": os.path.join(HOME, "Desktop"),
          "mode": "direct", "ext": (".md", ".txt"), "depth": 2},
@@ -824,7 +824,7 @@ def extra_roots_file():
 def load_extra_roots():
     """读用户登记的检索地址。
 
-    第四十四轮（爱卿之策）：让 Agent **自报家门**（问它"你的记忆存在哪"），
+    第四十四轮（作者之策）：让 Agent **自报家门**（问它"你的记忆存在哪"），
     把它报出来的路径粘进应用对应 Agent 的【检索地址】里，那一处就纳入了
     主动检索 —— 比本宫去猜各家目录结构靠谱得多。
     形如：{"workbuddy": [{"path": "C:\\…", "mode": "direct"|"digest", "name": "…"}]}
@@ -987,7 +987,7 @@ def iter_record_files(agents, include_digest_cache=True, orphans=True):
             for fp in _walk_root(r["root"], r.get("ext") or ROOT_EXTS,
                                  r.get("depth", 4)):
                 yield a.get("name") or key, fp, r["name"]
-        # 第五十五轮（爱卿令）：**应用内「一格一 Agent 的工作记录夹」整体废除** ——
+        # 第五十五轮（本版要求）：**应用内「一格一 Agent 的工作记录夹」整体废除** ——
         #   记录只认各家原生位置（就地索引），应用不再自留一格。
         # 这个 Agent 的摘录缓存也算它的记录
         if include_digest_cache:
@@ -997,7 +997,7 @@ def iter_record_files(agents, include_digest_cache=True, orphans=True):
                     if r.get("mode") in ("digest", "digest_sqlite") and \
                             bn.startswith(r["name"] + "_"):
                         yield a.get("name") or key, fp, r["name"] + "（摘录）"
-    # 没有对应客户端的记录根也要读（如桌面 —— 爱卿习惯把记录直接放桌面）。
+    # 没有对应客户端的记录根也要读（如桌面 —— 作者习惯把记录直接放桌面）。
     #   ⚠️ 但**按单个 Agent 调用时必须关掉**（orphans=False）：否则别的 Agent 的根
     #   会被当成"孤儿"、一股脑塞给这一个 Agent（第三十九轮踩过：每个 Agent 都
     #   列出同一份 63 件 ✗）。
@@ -1235,7 +1235,7 @@ def discover_agents(known=None, limit=30):
 
 
 # ---------- 接入程度：给卡片打灯（第四十六轮） ----------
-# 爱卿之令：按每家「接进应用数据的程度」在卡片上打标签 ——
+# 本版要求：按每家「接进应用数据的程度」在卡片上打标签 ——
 #   WorkBuddy 有人格指针但 MCP 受信任门槛拦着 → 人格灯亮、MCP 灯暗。
 # 四盏灯：
 #   records  找得到它的记录（就地索引里有货）
@@ -1351,7 +1351,7 @@ def integration_of(agent, extra_roots=None, record_count=0):
 
 
 # ---------- 会话清单：把各家的对话记忆粗粗总结成"历史会话"（第四十轮） ----------
-# 爱卿之意：工作台该像聊天软件侧边那样，列出**这个 Agent 都聊过什么/做过什么** ——
+# 本版初衷：工作台该像聊天软件侧边那样，列出**这个 Agent 都聊过什么/做过什么** ——
 #   从它的对话记忆里抽一条条「日期 + 标题 + 一句话摘要」，而不是甩一堆文件路径。
 # 不调模型：标题取记录里最像标题的那行，摘要取正文头几行，日期优先取文件名/正文里的日期。
 _SESS_NOISE = ("<system-reminder", "<user_info", "```", "<identity_context",
@@ -1389,7 +1389,7 @@ def _looks_like_title(line):
 def _prose_only(t, cap=160):
     """只留"人话"：剔掉路径、代码、JSON、命令行 —— 供会话摘要用。
 
-    爱卿之令：默认视图只显示"用户说了啥 + Agent 回的第一句"，
+    本版要求：默认视图只显示"用户说了啥 + Agent 回的第一句"，
     地址与代码一律收进「查看详细信息」。故此处先把非人话的东西洗掉。
     """
     out = []
@@ -1426,7 +1426,7 @@ def _first_sentence(t, cap=90):
     return (m.group(1) if m else txt[:cap]).strip()
 
 
-# 只从**对话数据文件**里抽会话 —— 爱卿之令（第四十三轮）：
+# 只从**对话数据文件**里抽会话 —— 本版要求（第四十三轮）：
 #   「有很多明显不是对话的选项被误认为是对话……可以改为只从 agent 的对话数据文件提取」
 #   判据：来源名里带「对话记忆 / 会话存档 / 会话实录」的才算对话数据；
 #   而且**必须真找到"用户说的那句"**（对话记忆里是 `### 用户` 段，别的记录里是
@@ -1435,7 +1435,7 @@ _CONV_SRC = ("对话记忆", "会话存档", "会话实录")
 
 
 def _mostly_latin(t):
-    """一句话里汉字太少、字母太多 → 多半不是"我"说的（爱卿从不跟我说英文）。"""
+    """一句话里汉字太少、字母太多 → 多半不是"我"说的（作者从不跟我说英文）。"""
     han = len(re.findall(r"[\u4e00-\u9fff]", t))
     lat = len(re.findall(r"[A-Za-z]", t))
     return lat > 8 and han < max(3, lat * 0.3)
@@ -1594,7 +1594,7 @@ def record_sessions(agent, limit=200):
 def _work_entries(agent):
     """该 Agent 的**原生**记录文件清单 [(名字, 路径)] —— 就地取，不复制。
 
-    第五十五轮（爱卿令）：取代原先从应用内那格 `工作记录\<Agent>\` 取原料。
+    第五十五轮（本版要求）：取代原先从应用内那格 `工作记录\<Agent>\` 取原料。
     """
     out, seen = [], set()
     try:
@@ -1617,7 +1617,7 @@ def collect_tasks(agents):
         if (a.get("kind") or "agent") != "agent":
             continue
         owner = a.get("name") or ""
-        # 第五十五轮（爱卿令）：应用内那格已废 —— 原料改成**原生记录就地取**
+        # 第五十五轮（本版要求）：应用内那格已废 —— 原料改成**原生记录就地取**
         for entry, ep in _work_entries(a):
                 if entry == "自动抄录":
                     continue                     # 旧版留下的分层目录，忽略
@@ -1660,7 +1660,7 @@ def collect_tasks(agents):
                     "when": stamp,
                     "mtime": int(mt),
                 })
-    # 第三十七轮（爱卿令）：就地索引 —— 直接读各 Agent 的原生记录根，不再依赖抄录副本
+    # 第三十七轮（本版要求）：就地索引 —— 直接读各 Agent 的原生记录根，不再依赖抄录副本
     for a in (agents or []):
         if (a.get("kind") or "agent") != "agent":
             continue
@@ -1829,7 +1829,7 @@ def sync_agent_logs(agents, state=None):
         if not srcs:
             continue
         dest_root = digest_cache_dir()          # 摘录产物：缓存目录（非记录夹）
-        # 第二十九轮（爱卿令）：抄录产物**直接落进这格**，不再套「自动抄录\」子目录 ——
+        # 第二十九轮（本版要求）：抄录产物**直接落进这格**，不再套「自动抄录\」子目录 ——
         # 自动抄录本就是要替掉那段要人手动粘贴的提示词，产物就该长在同一个地方。
         sub = dest_root
         for src in srcs:
@@ -1865,7 +1865,7 @@ def sync_agent_logs(agents, state=None):
                         if a.get("name") not in touched:
                             touched.append(a.get("name"))
                     continue
-                # 第三十九轮（爱卿令）：**不再搬运**。各家记录一律就地读
+                # 第三十九轮（本版要求）：**不再搬运**。各家记录一律就地读
                 #   （见 RECORD_ROOTS / iter_record_files），此处的复制之路已废，
                 #   只留一条说明 —— 免得日后有人又把"抄一份进应用"加回来。
                 seen_map[fp] = [mt, sz]
@@ -1876,7 +1876,7 @@ def sync_agent_logs(agents, state=None):
 
 
 # ---------- 各 Agent 的工作记录（第二十四轮） ----------
-# 爱卿令：每个 Agent 都要像 WorkBuddy 那样有自己的工作台，导入的数据按此收编。
+# 本版要求：每个 Agent 都要像 WorkBuddy 那样有自己的工作台，导入的数据按此收编。
 # 全部落在应用内「通用资源\工作记录\<Agent名>」—— 一格一个 Agent，互不越界。
 # 第五十五轮：WORKS_ROOT_NAME（应用内那格）已废
 
@@ -1888,7 +1888,7 @@ def collect():
         a["exe"] = _expand(a["exe"])          # 先还原占位符，再判在否
         exe = a["exe"]
         a["verified"] = os.path.isfile(exe)
-        # 登记路径落空 —— 掘一层 / 全盘寻真身（爱卿令：只要在就一定找得着）
+        # 登记路径落空 —— 掘一层 / 全盘寻真身（本版要求：只要在就一定找得着）
         if not a["verified"] and a.get("key") in SIGNATURES:
             hint = os.path.dirname(exe)
             found = deep_find(a["key"], hint_dir=hint)
@@ -1902,18 +1902,18 @@ def collect():
         a.setdefault("source", "内置登记")
         if a.get("hidden") or _blocked(a["name"]):
             continue
-        # ★ 爱卿之令：没检索到的不显示
+        # ★ 本版要求：没检索到的不显示
         #   （第十八轮改：本工具自身也一并不上榜 —— 它本不是 Agent）
         if not a["exists"]:
             continue
         agents.append(a)
 
     # ★ WorkBuddy 名下挂「工作区散件」：别的 Agent 想接力，点开它即可看全
-    #   （爱卿第十五轮之令）。只挂得到的、且确有文件的。
+    #   （作者第十五轮之令）。只挂得到的、且确有文件的。
     for a in agents:
         if (a.get("kind") or "agent") != "agent":
             continue                      # 只有真 Agent 有工作台
-        # 第三十九轮（爱卿令）：工作台要显示**它自己存储目录里的记录**，
+        # 第三十九轮（本版要求）：工作台要显示**它自己存储目录里的记录**，
         #   不是应用里那份 —— 就地读，直接给真实路径（点开即原处，不搬家）。
         native = []
         try:
@@ -1941,7 +1941,7 @@ def collect():
         except Exception as _e:
             a["sessions"] = []
             a["sessions_error"] = str(_e)[:80]      # 别再静默吞错（踩过）
-        # 第五十五轮（爱卿令）：只留**原生记录**（就地读，不复制）；
+        # 第五十五轮（本版要求）：只留**原生记录**（就地读，不复制）；
         #   应用内那格（works_dir / works_own）整体废除。
         a["works"] = native
 
@@ -2002,7 +2002,7 @@ def collect():
     except Exception:
         pass
 
-    # 第四十五轮（爱卿问：不收录就识别不到？）—— 登记表认不出的，**按特征自动发现**。
+    # 第四十五轮（有人问：不收录就识别不到？）—— 登记表认不出的，**按特征自动发现**。
     #   换机器、客户端改版、装了新东西时尤其要紧；发现的会带「自动发现」分类上架，
     #   人工确认后可以像别的 Agent 一样用。
     try:

@@ -47,7 +47,7 @@ def first_paragraph(path, limit=220):
 def scan_suite_members(skills):
     """把「整合卡」里的成员也收进索引 —— 带中文说明、标 `hidden`。
 
-    第五十三轮（爱卿问：为什么中文查不到 minimalist-ui）——
+    第五十三轮（有人问：为什么中文查不到 minimalist-ui）——
     成员的**中文说明只长在界面上**，没进索引；检索只认 SKILL.md 的英文
     frontmatter，于是"极简""粗野"这类中文词一个都命不中。
 
@@ -123,7 +123,7 @@ def skill_lib_dir():
 def is_lib_mount(d):
     r"""技能架里的这一枚，是不是**指向技能库的联接**？
 
-    第五十四轮（爱卿问：同一个技能怎么在名册里冒出两张卡）——
+    第五十四轮（有人问：同一个技能怎么在名册里冒出两张卡）——
     第二十一轮起技能真身统一收在应用内「通用资源\skills」，
     各家技能架（~/.workbuddy/skills、~/.claude/skills …）里只留 Junction 指过来。
     扫描器原先照单全收：同一个技能被记两遍（「用户级」一份、「本工具技能库」一份），
@@ -207,13 +207,13 @@ def collect():
             for n in sorted(os.listdir(p)):
                 R["skill_shelves"].append({"shelf": lr, "entry": n, "path": os.path.join(p, n)})
 
-    # 第二十五轮（爱卿令）：「工具与运行时」一栏已从应用里撤除 ——
+    # 第二十五轮（本版要求）：「工具与运行时」一栏已从应用里撤除 ——
     # 原先此处把 agent-tools 与兵站下的一级目录当作「工具」来收，收出来的
     # 只是一串文件夹名（bin / jdk / node …），对 agent 干活没有帮助，且与
     # MCP 栏、技能栏重复。有用于干活的信息（安卓兵站的家底）已并入 MCP 条目。
     # Android 兵站：第二十轮起定名「安卓模拟器MCP」，且已搬进本工具自己的目录下。
     # 故先看程序旁，再退回家目录（兼容旧布局与旧名）。
-    # 第二十二轮（爱卿令）：「MCP 要全部通用，不通用的从应用里移除」——
+    # 第二十二轮（本版要求）：「MCP 要全部通用，不通用的从应用里移除」——
     #   判据只有一条：入口是不是绑死在某个客户端自己的安装/运行时目录里。
     #   那种目录是那家安装或升级时整体替换的，别的 agent 不可能共用，
     #   故不算公共 MCP，不入册。（replicant 那种装在应用内、四家共用一行命令的，才算。）
@@ -230,7 +230,7 @@ def collect():
         "WorkBuddy": os.path.join(HOME, ".workbuddy", "mcp.json"),
         "Cursor": os.path.join(HOME, ".cursor", "mcp.json"),
         "Claude Desktop": os.path.join(os.environ.get("APPDATA", ""), "Claude", "claude_desktop_config.json"),
-        # 第三十四轮（爱卿问：「AstrBot 为什么没接入」）——
+        # 第三十四轮（有人问：「AstrBot 为什么没接入」）——
         #   AstrBot 的 MCP 注册表在 ~\.astrbot\data\mcp_server.json，结构与别家同为
         #   {"mcpServers": {...}}，先前漏扫了这一处，应用里便永远见不到 AstrBot 那一列。
         "AstrBot": os.path.join(HOME, ".astrbot", "data", "mcp_server.json"),
@@ -272,7 +272,7 @@ def collect():
             R["mcp"].append({"client": "Codex", "name": name,
                              "command": _cmd, "config": codex})
 
-    # ★ 第十八轮（爱卿令）：「把插件栏永久删除」——
+    # ★ 第十八轮（本版要求）：「把插件栏永久删除」——
     #   原先此处读 `~/.workbuddy/plugins/installed_plugins.json`，把 WorkBuddy 的
     #   48 个插件包收进名册。那些是 WorkBuddy 客户端自己加载的提示词/子代理包，
     #   本工具只能看不能用，故「插件」一栏与其数据源一并永久撤除。
