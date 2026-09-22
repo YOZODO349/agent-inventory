@@ -284,6 +284,19 @@ def collect():
             p = os.path.join(ws, proj, ".workbuddy", "skills")
             if os.path.isdir(p):
                 R["skills"] += scan_skills(p, "项目级/%s" % proj)
+
+    # 第五十六轮（本版要求：读取指引过时、没泛用性）——
+    #   原先「各 Agent 的记录目录」是**手写死在指引里**的：用户新登记的检索地址、
+    #   新装的 Agent 都进不去，粘给别的 Agent 就成了过期世界。此处把
+    #   `scan_agents_apps.masked_record_roots()`（内置登记 + 手工登记，脱敏）
+    #   每次扫描收进名册，指引改成「去读 record_roots」——于是它自己会更新。
+    try:
+        import importlib
+        _apps = importlib.import_module("scan_agents_apps")
+        R["record_roots"] = _apps.masked_record_roots()
+    except Exception as _e:
+        R["record_roots"] = {"_note": u"记录根导出失败：%s" % str(_e)[:80],
+                             "_masked": True}
     return R
 
 def main():

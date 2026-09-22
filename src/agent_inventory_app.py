@@ -1030,7 +1030,7 @@ class App(tk.Tk):
         self.configure(bg=BG)
         self._set_window_icon()
 
-        # 第六十二轮（本版要求）：页头右上角可摆一张配图——**右边缘与窗口右边缘重合**。
+        # 第六十二轮（本版要求）：页头右上角摆一张【龙图·666】——**右边缘与窗口右边缘重合**。
         #   原图 1216×1632（3:4 竖图），按页头那条带子的高度**等比例缩小**到
         #   103×138 物理像素（=69×92 逻辑像素），用 place(relx=1.0, anchor="ne") 钉在右上角：
         #   窗口怎么拉、怎么缩，它始终贴着右边、垂直位置不变。
@@ -1283,6 +1283,15 @@ class App(tk.Tk):
                      focusthickness=0, font=F_TAB)
         st.map("Act.TButton",
                background=[("active", INK_ON), ("disabled", "#c9c7c2")],
+               foreground=[("disabled", "#ffffff")])
+        # 主操作（第六十三轮）：一屏**只此一处实心**。比 Act 大一号、字加粗；
+        #   悬停提亮、按下再压深 —— 照 redesign-skill：交互必须有悬停与按下反馈。
+        st.configure("Primary.TButton", background=INK, foreground="#ffffff",
+                     borderwidth=0, relief="flat", padding=(22, 11),
+                     focusthickness=0, font=("Microsoft YaHei UI", 11, "bold"))
+        st.map("Primary.TButton",
+               background=[("pressed", "#000000"), ("active", INK_ON),
+                           ("disabled", "#c9c7c2")],
                foreground=[("disabled", "#ffffff")])
 
         # 搜索框：白底 + 淡描边，键盘进去时描边转为近黑（这是焦点环，不是装饰）
@@ -4807,6 +4816,9 @@ class App(tk.Tk):
             d = os.path.dirname(exe)
             if d and os.path.isdir(d):
                 return d
+        fd = (agent or {}).get("found_dir") or ""      # 按名字找到的那格（可能没有 exe）
+        if fd and os.path.isdir(fd):
+            return fd
         for r in self._record_roots_of(agent):
             if r and os.path.isdir(r):
                 return r
@@ -4848,10 +4860,13 @@ class App(tk.Tk):
                  font=F_TAG).pack(side="left", padx=(10, 0))
         # 第五十四轮（本版要求）：启动键在页头，紧挨标题那一行。
         if agent.get("exe"):
-            ttk.Button(head, text="启动 %s" % agent.get("name", ""),
-                       style="Tab.TButton",
-                       command=lambda a=agent: self.start_agent(a)
-                       ).pack(side="left", padx=(16, 0))
+            # 第六十三轮（本版要求）：启动是这一页的**主操作** —— 实心近黑 + 白字、
+            #   比常规按钮大一号；因此下方工具条一律改成描边，一屏只有这一处实心。
+            _go = ttk.Button(head, text=u"\u25b6  启动 %s" % agent.get("name", ""),
+                             style="Primary.TButton",
+                             command=lambda a=agent: self.start_agent(a))
+            _go.pack(side="left", padx=(18, 0))
+            self._tip(_go, u"启动它本体；打不开会告诉你为什么")
         # 右上角：说明这一页的记录是怎么来的
         tk.Label(head,
                  text=self._integration_line(agent),
@@ -4872,7 +4887,7 @@ class App(tk.Tk):
         ttk.Button(bar, text="打开本体目录", style="Tab.TButton",
                    command=lambda: self.open_path(self._agent_home(agent) or HERE)
                    ).pack(side="left")
-        _add_btn = ttk.Button(bar, text="手动添加检索地址", style="Act.TButton",
+        _add_btn = ttk.Button(bar, text="手动添加检索地址", style="Tab.TButton",
                               command=lambda: toggle_add())
         _add_btn.pack(side="left", padx=(6, 0))
         self._tip(_add_btn, u"添加记忆信息供其他 agent 浏览")
@@ -4882,6 +4897,12 @@ class App(tk.Tk):
         _onb_btn.pack(side="left", padx=(6, 0))
         self._tip(_onb_btn, u"只给这个 Agent：接 MCP 检索、在它每次必读处放一行指针，"
                             u"并给你可复制的测试提示词")
+        # 第六十四轮（本版要求）：一键把它的文件地址重新检索一遍
+        _scan_btn = ttk.Button(bar, text="自动检索", style="Tab.TButton",
+                               command=lambda: auto_scan())
+        _scan_btn.pack(side="left", padx=(6, 0))
+        self._tip(_scan_btn, u"重新枚举这个 Agent 的记录位置，并在它本体目录下"
+                             u"找一层候选目录（找到的可以一键登记）")
         ttk.Button(bar, text="关闭", style="Tab.TButton",
                    command=win.destroy).pack(side="right")
 
@@ -4918,9 +4939,15 @@ class App(tk.Tk):
         txt.tag_configure("sessLab", font=F_HINT, foreground=FAINT,
                           lmargin1=_px(20), lmargin2=_px(20), spacing3=14)
         txt.tag_configure("hair", font=F_HINT, foreground=LINE, spacing3=14)
+        # 「复制」小标：一枚浅浅的小胶囊（不占新行，背景只覆盖这三个字）
+        txt.tag_configure("copy", font=F_HINT, foreground=DIM, background=SOFT)
+        txt.tag_configure("reg", font=F_HINT, foreground=INFO, background=SOFT)
+        txt.tag_configure("undo", font=F_HINT, foreground=INFO, underline=True)
 
         line_map = {}       # 行号 → ("open", 路径)
         manual_map = {}     # 行号 → 手工登记的路径（右键可移除）
+        copy_map = {}       # 行号 → 这一行要复制的地址
+        reg_map = {}        # 行号 → (候选路径, 建议处理方式)：点「登记」加进来
 
         def _resolve(p2):
             """带通配的地址（如 ~/WorkBuddy/*/.workbuddy/memory）→ 取一个真实位置。"""
@@ -4937,9 +4964,43 @@ class App(tk.Tk):
             return p2
 
         def on_click(_e):
-            """点任何一行路径 → 打开那个位置。"""
+            """点路径 → 打开那个位置；点「复制」小标 → 把这条地址拷进剪贴板。"""
             try:
-                ln = int(str(txt.index("insert")).split(".")[0])
+                # 按**鼠标坐标**取位置：Tk 是在本绑定之后才挪 insert 的，
+                # 用 insert 会拿到上一次点击的旧位置（点哪都跳回上一次）。
+                try:
+                    _ix = txt.index("@%d,%d" % (_e.x, _e.y))
+                except Exception:
+                    _ix = txt.index("insert")
+                _tags = txt.tag_names(_ix)
+                _ln0 = int(str(_ix).split(".")[0])
+                if "undo" in _tags:                     # 点「恢复」
+                    _unhide_all()
+                    return "break"
+                if "reg" in _tags:                      # 点「登记」把候选加进来
+                    _p3, _m3 = reg_map.get(_ln0, ("", "direct"))
+                    if _p3:
+                        try:
+                            _mod3 = self._scanner_mod()
+                            _d3 = _mod3.load_extra_roots()
+                            _d3.setdefault(_key, []).append({
+                                "path": _p3, "mode": _m3,
+                                "name": os.path.basename(_p3.rstrip("\\/")) or _p3})
+                            _mod3.save_extra_roots(_d3)
+                            _mod3.invalidate_roots()
+                            self.status.configure(text=u"已登记：%s（%s）" % (_p3, _m3))
+                        except Exception as e:
+                            self.status.configure(text=u"登记失败：%s" % e)
+                        _reopen()
+                    return "break"
+                if "copy" in _tags:                     # 点在「复制」上
+                    _p2 = copy_map.get(int(str(_ix).split(".")[0]))
+                    if _p2:
+                        self.clipboard_clear()
+                        self.clipboard_append(_p2)
+                        self.status.configure(text=u"已复制地址：%s" % _p2)
+                    return "break"
+                ln = int(str(_ix).split(".")[0])
                 v = line_map.get(ln)
                 if isinstance(v, tuple) and v and v[0] == "open":
                     t2 = _resolve(v[1])
@@ -4952,12 +5013,23 @@ class App(tk.Tk):
             return "break"
 
         def on_rclick(_e):
-            """右键点在**手工登记**的那行 → 移除它（内置的删不了）。"""
+            """右键点在**任何一条**地址上 → 删掉它。
+
+            第六十四轮（本版要求）：手工登记的从登记表里删；**内置的**记进「隐藏」表
+            —— 从此不再登记、也不再读它，随时可恢复。
+            """
             try:
                 ln = int(str(txt.index("@%d,%d" % (_e.x, _e.y))).split(".")[0])
             except Exception:
                 return "break"
+            if ln in reg_map:                 # 候选还没登记，用不着删
+                self.status.configure(text=u"这是候选目录，还没登记，不必删除。")
+                return "break"
             p2 = manual_map.get(ln)
+            if not p2:
+                v2 = line_map.get(ln)
+                if isinstance(v2, tuple) and v2 and v2[0] == "open":
+                    p2 = v2[1]
             if p2:
                 remove_one(p2)
             return "break"
@@ -4973,10 +5045,32 @@ class App(tk.Tk):
             line_map[ln] = ("open", path)
             if manual:
                 manual_map[ln] = manual
-            txt.insert("end", path + "\n", "link")
+            txt.insert("end", path, "link")
+            txt.insert("end", u"  ", "")
+            txt.insert("end", u" 复制 ", "copy")     # 点它就拷这一条地址
+            txt.insert("end", "\n", "")
+            copy_map[ln] = path
             if note:
                 txt.insert("end", "  " + note + "\n", "sessLab")
             txt.insert("end", "─" * 68 + "\n", "hair")
+
+        def _cand_row(name, path, pr):
+            """自动检索找到的候选：一行 + 「登记 / 复制」两枚小标。"""
+            ln = int(str(txt.index("insert")).split(".")[0])
+            line_map[ln] = ("open", path)
+            txt.insert("end", name + "\n", "sessT")
+            ln = int(str(txt.index("insert")).split(".")[0])
+            line_map[ln] = ("open", path)
+            reg_map[ln] = (path, (pr or {}).get("suggest") or "direct")
+            txt.insert("end", path, "link")
+            txt.insert("end", u"  ", "")
+            txt.insert("end", u" 登记 ", "reg")
+            txt.insert("end", u" 复制 ", "copy")
+            txt.insert("end", "\n", "")
+            copy_map[ln] = path
+            txt.insert("end", u"  候选 ｜ %s 个文件 ｜ %.1f MB\n"
+                       % (pr.get("files", u"?"), (pr.get("bytes") or 0) / 1048576),
+                       "sessLab")
 
         _key = ((agent or {}).get("key") or agent.get("name") or "").strip().lower()
 
@@ -5035,8 +5129,84 @@ class App(tk.Tk):
             self.status.configure(text=u"已登记检索地址：%s（%s）" % (p2, mode))
             _reopen()
 
+        def _unhide_all():
+            """恢复这个 Agent 被删掉的内置记录根。"""
+            try:
+                _mod = self._scanner_mod()
+                _h = _mod.load_hidden_roots()
+                _h[_key] = []
+                _mod.save_hidden_roots(_h)
+                _mod.invalidate_roots()
+                self.status.configure(text=u"已恢复这个 Agent 被删掉的记录根。")
+            except Exception as e:
+                self.status.configure(text=u"恢复失败：%s" % e)
+            _reopen()
+
+        def auto_scan():
+            """自动检索：清缓存 → 重新枚举它的记录根 → 探一遍路径，
+            再在它**本体目录**下扫一层，挑出像记录目录的候选给你一键登记。"""
+            try:
+                _mod = self._scanner_mod()
+            except Exception:
+                _mod = None
+            if _mod is None:
+                self.status.configure(text=u"扫描器不可用，检索不了。")
+                return
+            try:
+                _mod.invalidate_roots()
+            except Exception:
+                pass
+            self.status.configure(text=u"正在检索 %s 的文件地址…" % (agent.get("name") or ""))
+            try:
+                win.update_idletasks()
+            except Exception:
+                pass
+            rows, files = [], 0
+            try:
+                for r in _mod.record_roots_of(agent):
+                    pr = _mod.probe_path(r.get("root")) or {}
+                    rows.append(r)
+                    files += pr.get("files") or 0
+            except Exception:
+                pass
+            cands = []
+            try:
+                known = set()
+                for r in (self._record_roots_of(agent) or []):
+                    known.add(os.path.normcase(str(r).lower()))
+                for it in ((_mod.load_extra_roots() or {}).get(_key) or []):
+                    known.add(os.path.normcase(str(it.get("path") or "").lower()))
+                KREC = ("memory", "memories", "record", "records", "log", "logs",
+                        "history", "session", "sessions", "data", "workspace",
+                        "workspaces", "project", "projects", "output", "outputs",
+                        u"记忆", u"记录", u"日志", u"会话", u"笔记", u"历史", u"输出")
+                home = self._agent_home(agent)
+                if home and os.path.isdir(home):
+                    for sub2 in sorted(os.listdir(home)):
+                        fp = os.path.join(home, sub2)
+                        if not os.path.isdir(fp):
+                            continue
+                        if os.path.normcase(fp.lower()) in known:
+                            continue
+                        low = sub2.lower()
+                        if not any(k in low for k in KREC):
+                            continue
+                        pr = _mod.probe_path(fp) or {}
+                        if not (pr.get("files") or 0):
+                            continue
+                        cands.append((sub2, fp, pr))
+            except Exception:
+                cands = []
+            self._ws_report = {"key": _key, "roots": len(rows), "files": files,
+                               "cands": cands}
+            self.status.configure(
+                text=u"自动检索完成：%d 个记录根 ｜ 共 %d 个文件 ｜ 发现 %d 个候选目录"
+                     % (len(rows), files, len(cands)))
+            _reopen()
+
         def remove_one(path):
-            """只删手工登记的那条（内置的由扫描器管，这里不动）。"""
+            """删掉一条地址：手工登记的从登记表里删；**内置的**记进「隐藏」表
+            —— 从此不再登记、也不再读它，随时可恢复。"""
             try:
                 _mod = self._scanner_mod()
                 d2 = _mod.load_extra_roots()
@@ -5049,7 +5219,24 @@ class App(tk.Tk):
                     hit = i2
                     break
             if hit is None:
-                self.status.configure(text=u"这条不是手工登记的，删不了：%s" % path)
+                # 内置的记录根：记进「隐藏」表（真的不再读它）
+                if not messagebox.askyesno(
+                        u"删除地址",
+                        u"这是**内置登记**的记录根：\n%s\n\n"
+                        u"删掉后本应用不再登记、也不再读它（随时可点下面的「恢复」找回）。\n\n"
+                        u"确定删？" % path, parent=win):
+                    return
+                try:
+                    _h = _mod.load_hidden_roots()
+                    _lst = _h.setdefault(_key, [])
+                    if path not in _lst:
+                        _lst.append(path)
+                    _mod.save_hidden_roots(_h)
+                    _mod.invalidate_roots()
+                    self.status.configure(text=u"已删除（不再读取）：%s" % path)
+                    _reopen()
+                except Exception as e:
+                    self.status.configure(text=u"删除失败：%s" % e)
                 return
             if not messagebox.askyesno(u"移除", u"移除这条登记的地址？\n%s" % path,
                                        parent=win):
@@ -5117,8 +5304,11 @@ class App(tk.Tk):
                 _mode = {"direct": u"直接读", "digest": u"摘录",
                          "digest_sqlite": u"摘录", "skip": u"只登记（格式读不了）"}.get(
                              r.get("mode"), r.get("mode") or "")
+                _ext = u"、".join(r.get("ext") or [])
                 _rows.append((r.get("name") or u"（未命名）", r.get("root") or "",
-                              u"%s ｜ %s 个文件" % (_mode, r.get("count") or 0), u""))
+                              u"%s%s ｜ %s 个文件"
+                              % (_mode, (u"（%s）" % _ext) if _ext else u"",
+                                 r.get("count") or 0), u""))
         except Exception:
             _rows = []
         _extra = []
@@ -5144,9 +5334,56 @@ class App(tk.Tk):
         txt.insert("end", u"　　共 %d 处\n" % len(_rows), "h2n")
         txt.insert("end", u"本 Agent 的记录都长在这些位置，一律就地读、不复制；"
                           u"点任一行路径即打开该位置。\n", "sub")
-        for _nm, _root, _note, _man in _rows:
-            _row(_nm, _root, _note, _man)
-        txt.insert("end", u"手工登记的地址，可在这行上右键移除。\n", "sessLab")
+        # 同一个目录可能被登记了**两种读法**（如 WorkBuddy 的 projects：
+        #   .jsonl 存档走摘录、.md/.txt 走直读）—— 合并成一行显示，
+        #   备注里把两种处理都写清楚，免得看着像重复（本版要求）。
+        _groups = []
+        for _r in _rows:
+            _norm = os.path.normcase((_r[1] or "").rstrip("\\/").lower())
+            for _g in _groups:
+                if _g["norm"] == _norm:
+                    _g["rows"].append(_r)
+                    break
+            else:
+                _groups.append({"norm": _norm, "rows": [_r]})
+        for _g in _groups:
+            if len(_g["rows"]) == 1:
+                _row(*_g["rows"][0])
+                continue
+            _nms = [x[0] for x in _g["rows"]]
+            _pre = os.path.commonprefix(_nms)
+            if len(_pre) >= 4:
+                _name2 = _pre + u" ＋ ".join(n[len(_pre):] for n in _nms)
+            else:
+                _name2 = u" ＋ ".join(_nms)
+            _note2 = (u" ｜ ".join(x[2] for x in _g["rows"]) +
+                      u"（同一目录的两种读法）")
+            _row(_name2, _g["rows"][0][1], _note2, _g["rows"][0][3])
+        _rep = getattr(self, "_ws_report", None)
+        if _rep and _rep.get("key") == _key and _rep.get("cands"):
+            _known2 = set()
+            try:
+                for _it2 in ((self._scanner_mod().load_extra_roots() or {}).get(_key) or []):
+                    _known2.add(os.path.normcase(str(_it2.get("path") or "").lower()))
+            except Exception:
+                pass
+            _todo = [_c for _c in _rep["cands"]
+                     if os.path.normcase(_c[1].lower()) not in _known2]
+            if _todo:
+                txt.insert("end", u"\n自动检索找到的候选目录（还没登记）\n", "h2")
+                txt.insert("end", u"登记前请确认它确实是这个 Agent 记东西的地方。\n", "sub")
+                for _nm3, _p3, _pr3 in _todo:
+                    _cand_row(_nm3, _p3, _pr3)
+        try:
+            _hid = (self._scanner_mod().load_hidden_roots() or {}).get(_key) or []
+        except Exception:
+            _hid = []
+        if _hid:
+            txt.insert("end", u"\n已删除 %d 条内置地址 —— " % len(_hid), "sessLab")
+            txt.insert("end", u"恢复", "undo")
+            txt.insert("end", u"\n", "")
+        txt.insert("end", u"点路径即打开该位置 ｜ 点「复制」拷地址 ｜ "
+                          u"任何一条都可右键删除。\n", "sessLab")
 
         txt.configure(state="disabled")
         txt.bind("<Button-1>", on_click)

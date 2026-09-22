@@ -128,7 +128,7 @@ KNOWN = [
     },
     {
         "key": "chunxiao",
-        "name": "某个项目助手",
+        "name": "示例项目助手",
         "desc": "基于 AstrBot 运行时的自建机器人实例。",
         "exe": r"@HOME@\AppData\Local\AstrBot\backend\python\pythonw.exe",
         "icon": "astrbot.png",
@@ -222,6 +222,124 @@ def _is_installer(fname):
     return False
 
 
+def name_roots():
+    """按**名字**找 Agent 时要看的根（比 deep_find 的「近处」宽一档）。"""
+    la = os.environ.get("LOCALAPPDATA", "")
+    ap = os.environ.get("APPDATA", "")
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    out = [(HOME, 2),
+           (la, 2),
+           (os.path.join(la, "Programs") if la else "", 3),
+           (ap, 3),
+           (pf, 3), (pf86, 3),
+           (os.path.join(HOME, "Desktop"), 3),
+           (os.path.join(HOME, "Documents"), 3),
+           (os.path.join(HOME, "Downloads"), 3)]
+    for ch in "CDEFG":
+        d = ch + ":\\"
+        if os.path.isdir(d):
+            out.append((d, 2))
+    seen, res = set(), []
+    for r, dep in out:
+        if r and os.path.isdir(r) and r.lower() not in seen:
+            seen.add(r.lower())
+            res.append((r, dep))
+    return res
+
+
+def _norm_name(s2):
+    """名字归一：小写、去空格下划线连字符，但**保留 `+` 与点号** ——
+    `Codex++` → `codex++`、`.codex` → `.codex`，两者不再混为一谈（实测踩过）。"""
+    return re.sub(r"[^0-9a-z+\u4e00-\u9fff.]+", "", str(s2 or "").lower())
+
+
+def _name_wants(ent):
+    """这个名字的 Agent，可能被叫成哪些名字（都归一化，短的丢弃免误伤）。"""
+    key = (ent.get("key") or "").lower()
+    canon = AGENT_ALIASES.get(key) or ent.get("name") or ""
+    # 只用「正式名 + key + 特征文件名」——**不用别名表**：
+    #   别名里的 `codex` 太泛，实测会误认 `.cache\codex-runtimes`（第六十五轮踩过）
+    names = [ent.get("name") or "", key, canon]
+    for sig in (SIGNATURES.get(key) or ()):
+        names.append(os.path.splitext(sig)[0].replace("-", " ").replace("_", " "))
+    out = []
+    for n in names:
+        n2 = _norm_name(n)
+        if len(n2) >= 4 and n2 not in out:
+            out.append(n2)
+    return out
+
+
+def _pick_exe(folder, key=""):
+    """在那格里挑一枚主程序。
+
+    优先**特征文件名完全命中**者（`codex-plus-plus.exe` 这种）——
+    光看体积会挑到 `…-manager.exe`（实测踩过）；命中不了再退回体积最大的那枚。
+    安装包/卸载器/更新器一律不算。
+    """
+    sigs = [str(x).lower() for x in (SIGNATURES.get(key) or ())]
+    best_sig, best_any = "", ""
+    try:
+        for dp, dns, fns in os.walk(folder):
+            if dp[len(folder):].count(os.sep) > 2:
+                dns[:] = []
+                continue
+            for f in fns:
+                fl = f.lower()
+                if not fl.endswith(".exe") or _is_installer(fl):
+                    continue
+                cand = os.path.join(dp, f)
+                try:
+                    sz = os.path.getsize(cand)
+                except Exception:
+                    continue
+                if fl in sigs and (not best_sig or sz > os.path.getsize(best_sig)):
+                    best_sig = cand
+                if not best_any or sz > os.path.getsize(best_any):
+                    best_any = cand
+    except Exception:
+        pass
+    return best_sig or best_any
+
+
+def find_by_name(ent, budget=6000):
+    """**只看名字**找它的落脚点。
+
+    第六十五轮（作者令）：登记表里那些 `@HOME%\AppData\Local\Programs\…`
+    不再当**硬性特征** —— 只要常见位置里有一格名字对得上的文件夹（如 `Codex++`），
+    就算把它认出来；文件夹里顺手挑一枚主程序（挑不到也算认出来）。
+    返回 (目录, 主程序或 "", 命中的目录名, 所在的根) ／ None。
+    """
+    wants = _name_wants(ent)
+    if not wants:
+        return None
+    seen = 0
+    for root, dep in name_roots():
+        base_depth = root.rstrip("\\/").count(os.sep)
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+            if dirpath.count(os.sep) - base_depth >= dep:
+                dirnames[:] = []
+                continue
+            dirnames[:] = [d for d in dirnames
+                           if d.lower() not in _SKIP_DIRS and not d.startswith("$")
+                           and not d.startswith(".")]
+            seen += 1
+            if seen > budget:
+                return None
+            for d in dirnames:
+                if d.startswith(".") or d.startswith("$"):
+                    continue                    # 隐藏/系统夹不算安装位
+                nd = _norm_name(d)
+                if not nd:
+                    continue
+                for w in wants:
+                    if nd == w or nd.startswith(w):
+                        full = os.path.join(dirpath, d)
+                        return (full, _pick_exe(full, ent.get("key") or ""), d, root)
+    return None
+
+
 def deep_find(key, hint_dir=None):
     """给某个 agent key 寻真身：先近处（`hint_dir` 及其父），再全盘。
 
@@ -241,6 +359,9 @@ def deep_find(key, hint_dir=None):
         os.path.join(HOME, "AppData", "Local"),
         os.path.join(HOME, "AppData", "Local", "Programs"),
         os.path.join(HOME, "AppData", "Roaming"),
+        # 全盘那段会跳过 Program Files（_SKIP_DIRS），故这里显式补上
+        os.environ.get("ProgramFiles", r"C:\Program Files"),
+        os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
     ]
     hit = _walk_find(near, wants, max_depth=3, budget=4000)
     if hit:
@@ -857,7 +978,11 @@ def _roots_for(key):
     if not _ROOTS_CACHE["v"] or now - _ROOTS_CACHE["t"] > 5:
         _ROOTS_CACHE["v"] = all_roots()
         _ROOTS_CACHE["t"] = now
-    return _ROOTS_CACHE["v"].get(key) or []
+    roots = _ROOTS_CACHE["v"].get(key) or []
+    hid = _hidden_of(key)                       # 删掉的：不再登记、也不再读
+    if hid:
+        roots = [r for r in roots if str(r.get("root") or "").lower() not in hid]
+    return roots
 
 
 def invalidate_roots():
@@ -878,6 +1003,74 @@ def all_roots():
             out.setdefault(key, []).append({
                 "name": nm, "root": p2,
                 "mode": (it or {}).get("mode") or "direct", "user": True})
+    return out
+
+
+def mask_path(p2):
+    """路径脱敏：程序目录 → <应用目录>、家目录 → ~、用户名 → <用户名>。
+
+    正反斜杠两种写法都要认（手工登记的地址常写成 `C:/...` 形式）。
+    顺序要紧：**先折程序目录**（它本身就在家目录底下），否则会先被折成 `~\Agent资产总览`。
+    """
+    if not p2:
+        return p2
+    s = str(p2)
+    for sep in ("\\", "/"):
+        a = HERE.rstrip("\\/").replace("\\", sep)
+        if s.lower().startswith(a.lower()):
+            s = u"<应用目录>" + s[len(a):]
+            break
+    home = os.path.expanduser("~").rstrip("\\/")
+    for sep in ("\\", "/"):
+        h = home.replace("\\", sep)
+        if s.lower().startswith(h.lower()):
+            s = "~" + s[len(h):]
+            break
+    user = os.path.basename(os.path.expanduser("~"))
+    if user:
+        s = re.sub(r"[\\/]" + re.escape(user) + r"(?=[\\/])",
+                   lambda m: m.group(0)[0] + u"<用户名>", s)
+    return s
+
+
+def masked_record_roots():
+    """把「记录根」导成一份**脱敏**清单，写进 agent_inventory.json。
+
+    第五十六轮（本版要求：指引过时、没泛用性）——
+    读取指引原先手写死了一张「原生记录目录」表：用户新登记的检索地址进不了那张表，
+    粘给别的 Agent 就成了「作者写那天的世界」。此处改为每次扫描导出一次
+    `all_roots()`（内置登记 + 手工登记的检索地址），指向一处**活数据**；
+    路径一律脱敏（这份东西是要给模型看的），字段含义见指引第三节。
+    """
+    out = {"_note": u"各 Agent 的记录根 = 内置登记 + 用户手工登记的检索地址，每次扫描刷新。"
+                    u"路径已脱敏：~ = 用户目录，<应用目录> = 本应用所在目录，"
+                    u"<用户名> = 家目录末级名。mode: direct=直接读 / digest=大文件先摘录 / "
+                    u"skip=私有格式只登记。",
+           "_masked": True}
+    try:
+        roots = all_roots() or {}
+    except Exception as e:
+        out["_error"] = u"取记录根失败：%s" % str(e)[:80]
+        return out
+    for key, items in roots.items():
+        rows = []
+        for r in (items or []):
+            row = {"name": r.get("name") or "",
+                   "root": mask_path(str(r.get("root") or "")),
+                   "mode": r.get("mode") or "direct"}
+            if r.get("user"):
+                row["user"] = True
+            for k in ("glob", "db"):
+                if r.get(k):
+                    row[k] = mask_path(str(r[k]))
+            for k in ("table", "key_col", "time_col", "content_col", "depth"):
+                if r.get(k):
+                    row[k] = r[k]
+            if r.get("ext"):
+                row["ext"] = list(r["ext"])
+            rows.append(row)
+        if rows:
+            out[key] = rows
     return out
 
 
@@ -965,6 +1158,45 @@ def _walk_root(root, exts=ROOT_EXTS, depth=4, cap=ROOT_MAX_BYTES):
     return out
 
 
+HIDDEN_FILE_NAME = u"隐藏的记录根.json"
+
+
+def hidden_roots_file():
+    """已删掉的记录根存在哪儿（与「检索地址.json」同一个目录）。"""
+    return os.path.join(os.path.dirname(extra_roots_file()), HIDDEN_FILE_NAME)
+
+
+def load_hidden_roots():
+    """被删掉的记录根：`{"<key>": ["<root>", …]}`。
+
+    第六十四轮（作者令）：地址栏里的**任何**一条都能删 —— 手工登记的从登记表里删；
+    **内置的**记到这里，从此不再登记、也不再被读（可一键恢复）。
+    """
+    try:
+        d = json.load(io.open(hidden_roots_file(), encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_hidden_roots(d):
+    fp = hidden_roots_file()
+    try:
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        io.open(fp, "w", encoding="utf-8").write(json.dumps(d, ensure_ascii=False,
+                                                            indent=1))
+        return True
+    except Exception:
+        return False
+
+
+def _hidden_of(key):
+    try:
+        return set(str(x).lower() for x in (load_hidden_roots().get(key) or []))
+    except Exception:
+        return set()
+
+
 def agent_key_of(agent):
     """取 Agent 的登记键（用来对上记录根）。"""
     return (agent.get("key") or "").strip().lower()
@@ -1021,15 +1253,27 @@ def record_roots_of(agent):
     for r in _roots_for(key):
         roots = _expand_roots(r["root"])
         mode = r.get("mode")
-        if mode in ("direct", "digest", "digest_sqlite"):
-            n = (len(glob.glob(os.path.join(digest_cache_dir(), r["name"] + "_*.md")))
-                 if mode == "digest_sqlite"
-                 else len(_walk_root(r["root"], r.get("ext") or ROOT_EXTS,
-                                     r.get("depth", 4))))
+        glob_pat = r.get("glob") or ""
+        if mode == "digest_sqlite":
+            n = len(glob.glob(os.path.join(digest_cache_dir(), r["name"] + "_*.md")))
+            exts = [".db"]
+        elif mode == "digest" and glob_pat:
+            # 摘录档读的是 glob 指的那些大文件（如 projects/*/*.jsonl），
+            # **计数要照它算** —— 先前一律按 .md/.txt 数，显示出来的数字是错的
+            try:
+                n = len([x for x in glob.glob(glob_pat) if os.path.isfile(x)])
+            except Exception:
+                n = 0
+            exts = [os.path.splitext(glob_pat)[1] or ".jsonl"]
+        elif mode in ("direct", "digest"):
+            exts = list(r.get("ext") or ROOT_EXTS)
+            n = len(_walk_root(r["root"], tuple(exts), r.get("depth", 4)))
         else:
             n = len(roots)
+            exts = []
         out.append({"name": r["name"], "root": r["root"], "mode": mode,
-                    "found": bool(roots), "count": n})
+                    "found": bool(roots), "count": n, "ext": exts,
+                    "glob": glob_pat})
     return out
 
 
@@ -1617,54 +1861,7 @@ def collect_tasks(agents):
         if (a.get("kind") or "agent") != "agent":
             continue
         owner = a.get("name") or ""
-        # 第五十五轮（本版要求）：应用内那格已废 —— 原料改成**原生记录就地取**
-        for entry, ep in _work_entries(a):
-                if entry == "自动抄录":
-                    continue                     # 旧版留下的分层目录，忽略
-                ep = os.path.join(src_dir, entry)
-                text, arts = "", []
-                if os.path.isdir(ep):
-                    for dp, _dn, fns in os.walk(ep):
-                        for f in fns:
-                            arts.append(os.path.join(dp, f))
-                    for f in sorted(os.listdir(ep)):
-                        fp = os.path.join(ep, f)
-                        if os.path.isfile(fp) and os.path.splitext(f)[1].lower() in (".md", ".txt"):
-                            try:
-                                text = open(fp, "r", encoding="utf-8", errors="ignore").read()[:4000]
-                            except Exception:
-                                text = ""
-                            if text:
-                                break
-                else:
-                    try:
-                        text = open(ep, "r", encoding="utf-8", errors="ignore").read()[:20000]
-                    except Exception:
-                        text = ""
-                    # 日志本身不算「产物」—— 产物是它记录下来的东西
-                try:
-                    mt = os.path.getmtime(ep)
-                    stamp = _t.strftime("%Y-%m-%d %H:%M", _t.localtime(mt))
-                except Exception:
-                    mt, stamp = 0, ""
-                did = " ".join(_strip_meta(text).split())[:400]
-                tasks.append({
-                    "key": "task_" + re.sub(r"\W+", "_", (owner + "_" + src_name + "_" + entry)).lower()[:60],
-                    "agent": owner,
-                    "source": src_name,
-                    "title": _task_title(text, entry),
-                    "did": did or "（本会话无文字记录，仅存产物）",
-                    "participants": _task_participants(text, owner),
-                    "artifacts": _task_artifacts(text, arts),
-                    "log": ep,
-                    "when": stamp,
-                    "mtime": int(mt),
-                })
     # 第三十七轮（本版要求）：就地索引 —— 直接读各 Agent 的原生记录根，不再依赖抄录副本
-    for a in (agents or []):
-        if (a.get("kind") or "agent") != "agent":
-            continue
-        pass
     for owner, fp, src_name in iter_record_files(agents):
             try:
                 text = open(fp, "r", encoding="utf-8", errors="ignore").read()[:20000]
@@ -1896,7 +2093,21 @@ def collect():
                 a["exe"] = found
                 a["verified"] = True
                 a["source"] = "全盘寻得"
-        a["exists"] = a["verified"]
+        # 第六十五轮（作者令）：**名字也是证据** —— 登记表里的路径不再作硬性条件，
+        #   常见位置里有一格名字对得上的文件夹（如 Codex++）即认出来。
+        if not a["verified"]:
+            try:
+                _hit = find_by_name(a)
+            except Exception:
+                _hit = None
+            if _hit:
+                _dir, _exe, _who, _root = _hit
+                if _exe:
+                    a["exe"] = _exe
+                a["found_dir"] = _dir
+                a["verified"] = bool(_exe)
+                a["source"] = u"按名字找到 · %s" % _who
+        a["exists"] = a["verified"] or bool(a.get("found_dir"))
         if not _icon_exists(a.get("icon")):
             a["icon"] = ""
         a.setdefault("source", "内置登记")

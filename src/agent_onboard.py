@@ -149,7 +149,7 @@ def _slug(name):
 
 
 READ_GUIDE_MARK = u"<!-- agent-inventory:read-guide -->"
-GUIDE_VERSION_MARK = u"<!-- guide-version: 7 -->"
+GUIDE_VERSION_MARK = u"<!-- guide-version: 8 -->"
 SKILL_REL = os.path.join(u"通用资源", "skills", "agent-inventory", "SKILL.md")
 
 READ_GUIDE_POINT = u'''## 先查后答（**每一轮都做，不要等对方提醒**）
@@ -160,18 +160,19 @@ READ_GUIDE_POINT = u'''## 先查后答（**每一轮都做，不要等对方提�
   没命中再按关键词调 `inventory_search(query="关键词", scope="records")`，命中才细读。
 - **没有 MCP**：用你自己的搜索工具，拿对方话里的关键词在各家记录目录里搜一遍，
   **命中才打开文件**，别整篇读。
-- 完整目录清单与省 token 的查法见：
+- **记录根清单**在 `agent_inventory.json` 的 `record_roots`（每次扫描刷新，已脱敏）；\\n  省 token 的查法见：
 
 ```
 {{APP}}\\通用资源\\skills\\agent-inventory\\SKILL.md
 ```
 '''
 
-READ_GUIDE_SKILL = u'''{{VER}}
----
+READ_GUIDE_SKILL = u'''---
 name: agent-inventory
 description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「以前做过什么 / 某个项目现在到哪一步 / 本机有哪些技能或 MCP 服务 / 谁在什么时候干了什么」时，先读本篇，按里面的路径直接读文件即可。
+version: "8"
 ---
+{{VER}}
 
 # 本机 Agent 资产总览 · 读取指引
 
@@ -185,11 +186,13 @@ description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「�
 
 | 文件 / 目录 | 内容 |
 |---|---|
-| `agents.json`（约 170 KB） | `agents[]` Agent（name/desc/exe/works_dir）；`tasks[]` 任务与产物（title/did/artifacts/log/when） |
-| `agent_inventory.json`（约 44 KB） | `skills[]` 技能（name/desc/path）；`mcp[]` MCP 注册；`skill_shelves[]` 技能架 |
+| `agents.json` | `agents[]` Agent（name/desc/exe/works_dir）；`tasks[]` 任务与产物（title/did/artifacts/log/when） |
+| `agent_inventory.json` | `skills[]` 技能（name/desc/path）；`mcp[]` MCP 注册；`skill_shelves[]` 技能架；**`record_roots` 各 Agent 的记录根（见第三节）** |
 | `主要项目.json` | 用户划重点的项目：`name` / `keys` / `note` |
 | `agent_intros.json` | 各 Agent 的简介 |
-| 各 Agent 的**原生记录目录** | 就地索引，直接读（见下方清单） |
+
+> **别照抄体量**：这几份 json 随本机扫描变（`agents.json` 实测已到 2 MB 级），
+> 一律**用搜索工具读，别整份灌进上下文**。
 
 ## 二、怎么查（按需取用，**别整份读**）
 
@@ -201,15 +204,36 @@ description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「�
 3. **谁在什么时候干过什么**：`agents.json` 的 `tasks[]`。
 4. **有没有现成技能**：`agent_inventory.json` 的 `skills[]`，需要正文再读其 `path`。
 
-## 三、原生记录目录（就地索引，直接读这些地方）
+## 三、记录根：**别背表，去读 `record_roots`**
 
-| Agent | 记录根 | 处理 |
-|---|---|---|
-| WorkBuddy | `~/WorkBuddy/*/.workbuddy/memory/`、`~/.workbuddy/memory/` | 直接读 |
-| Codex++ | `~/.codex/memories/`、`~/.codex/sessions/`（jsonl，单文件可达十几 MB） | 笔记直读；实录摘录 |
-| AstrBot | `~/.astrbot/data/workspaces/` | 直接读 |
-| 桌面 | `~/Desktop/*.md`、`*.txt` | 直接读 |
-| Cursor / Grok Bot | 私有二进制格式 | 只登记，读不了 |
+**本篇最要紧的一节。** 各 Agent 的记录目录**没有写死在本文里**，而是每次扫描刷新在：
+
+```
+{{APP}}\\agent_inventory.json    →    字段 `record_roots`
+```
+
+它是**内置登记 + 用户手工登记的检索地址**合并后的活清单 ——
+新装的 Agent、后来手工登记的目录，都会自动出现在那儿，**不必改本文**。形如：
+
+```json
+"record_roots": {
+  "astrbot":   [{"name": "AstrBot 会话工作区", "root": "~/.astrbot/data/workspaces",
+                 "mode": "direct"}],
+  "workbuddy": [{"name": "WorkBuddy 长期记忆", "root": "~/.workbuddy/memory",
+                 "mode": "direct"},
+                {"name": "WorkBuddy 会话存档", "mode": "digest",
+                 "glob": "~/.workbuddy/projects/*/*.jsonl"}]
+}
+```
+
+- `mode`：`direct` = 直接读；`digest` = 大文件（`.jsonl` / `.db`）先摘录再读；
+  `skip` = 私有格式，只登记、读不了（如 Cursor / Grok Bot 的库）。
+- 带 `user: true` 的 = **用户自己登记的**检索地址。
+- **路径是脱敏的**（别把用户名递出去）：`~` = 用户目录，`<应用目录>` = 上面那个应用目录，
+  `<用户名>` = 家目录末级名。搜之前把 `~` 展开成本机家目录即可。
+
+**照着搜**：把 `record_roots` 里**每个 `root`（含 `glob`）都展开，一次搜完** ——
+别只搜应用自己的记录夹，也别一个一个目录试。
 
 **摘录缓存在** `%LOCALAPPDATA%\\Agent资产总览\\digest缓存\\`（可随时重建，不是唯一副本）。
 
@@ -223,7 +247,7 @@ description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「�
 
 1. **有 MCP**：`inventory_index()` 看目录（约 266 token），再拿对方话里的关键词
    `inventory_search(query="关键词", scope="records")`；**命中才细读**。
-2. **没有 MCP**：用你的搜索工具，拿关键词在「六、该搜哪些目录」里列的**每个目录**搜一遍；
+2. **没有 MCP**：用你自己的搜索工具，拿关键词在第三节 `record_roots` 的**每个目录**里搜一遍；
    **命中才打开文件**。
 3. 什么算关键词：项目名、功能名、文件名、日期、专有名词。纯闲聊/纯指令挑不出关键词就跳过。
 
@@ -240,27 +264,16 @@ description: 查本机 AI Agent 资产与工作历史（免 MCP）。涉及「�
    先搜关键词，只读命中的那几行。
 4. 要细看时只打开**命中的那一两个文件**，优先看**文件名里日期最新**的。
 
-## 六、该搜哪些目录（**没走 MCP 时，照着这几个地方搜**）
+## 六、该搜哪些目录 → **按 `record_roots` 办**
 
-搜关键词时**这几个根都要搜**，别只搜应用自己的记录夹 ——
+**这里没有写死的目录表** —— 一切以 `record_roots` 为准（第三节）。
+搜的时候**每个根都要搜**，别只搜应用自己的记录夹：
 "某件事在哪"往往只记在其中一处（教训：WorkBuddy 曾只搜了别人的工作区，
-而答案就在**它自己的记忆**里）：
-
-| # | 目录 | 里面是什么 |
-|---|---|---|
-| 1 | `~/WorkBuddy/*/.workbuddy/memory/` | WorkBuddy 每次会话的记忆（**最全**）|
-| 2 | `~/.workbuddy/memory/` | WorkBuddy 的长期记忆（正在进行的会话写这儿）|
-| 3 | `~/.codex/memories/` | Codex 的笔记 |
-| 4 | `~/.workbuddy/projects/*/*.jsonl` | **WorkBuddy 完整会话存档**（已摘录进缓存）|
-| 5 | `~/.astrbot/data/workspaces/` | AstrBot 会话里产出的文件 |
-| 6 | `~/Desktop/*.md`、`*.txt` | 放在桌面上的文本 |
-| 7 | `%LOCALAPPDATA%\Agent资产总览\digest缓存\` | 大文件摘出来的可读文本（含 **AstrBot 的对话记忆**）|
-
-**照着搜**：`Grep -r "关键词" <上表每个目录>` —— 一次搜全，别一个一个目录试。
+而答案就在**它自己的记忆**里）。
 
 ## 七、三个坑
 
-- `agents.json` 约 170 KB，别整份灌进上下文，用搜索工具。
+- 名册别整份读（`agents.json` 已经到 MB 级），用搜索工具。
 - `Codex 会话实录_*`、`*会话记忆*` 是机器抄录的原始转写，噪音大；**优先读文件名带中文标题的**（人写的）。
 - 判断时间**以文件名里的日期为准**，别信文件修改时间（抄录件的修改时间是"抄的那一刻"）。
 '''
@@ -318,12 +331,38 @@ PERSONA_POINT = (
     u"不要等对方说『还记不记得』。有 MCP 就先调 `inventory_index()`（一页目录，"
     u"约 266 token），再按对方话里的关键词调 `inventory_search(query=\"关键词\", "
     u"scope=\"records\")`，命中才细读；没有 MCP 就用你自己的搜索工具，"
-    u"在各家记录目录里搜关键词，命中才打开文件。服务名 `agent-inventory`；"
+    u"在各家记录目录（根清单见 `agent_inventory.json` 的 `record_roots`）里搜关键词，"
+    u"命中才打开文件。服务名 `agent-inventory`；"
     u"另外 `inventory_project`(项目全貌) / `inventory_recent`(近期动态) 按需用。"
     u"【更要紧的一条】**动手写或改任何东西之前**，先调 "
     u"`inventory_skills(query=\"那件事的关键词\")` 看本机有没有现成技能 —— "
     u"例如要做界面/视觉，先查设计类技能（taste-suite 那一家）；"
     u"别凭手感开工。")
+LEGACY_GUIDE_HEADS = (
+    u"name: agent-inventory",              # 旧版把 SKILL 原文整段粘进人格
+    u"# 本机 Agent 资产总览",               # 或从大标题起
+    u"本机 Agent 资产总览 · 读取指引",
+    u"<!-- agent-inventory:read-guide -->",
+)
+
+
+def _strip_legacy_guide(text):
+    """剪掉早年**整篇粘进人格**的旧读取指引。
+
+    第五十六轮（本版要求：指引过时且更新不到）——
+    指引早已改成"活清单"（去读 record_roots），可人格里那份**手抄的全量旧版**
+    既过期、又占着「先读」的权威位。它留有可辨认的头（`name: agent-inventory` 等），
+    从最早那处起一刀剪掉；没这几种头就原样返回，非人格正文不动。
+    """
+    t = text or ""
+    cut = -1
+    for sig in LEGACY_GUIDE_HEADS:
+        k = t.find(sig)
+        if k >= 0 and (cut < 0 or k < cut):
+            cut = k
+    return t[:cut] if cut >= 0 else t
+
+
 def write_astrbot_persona(home):
     """把指针写进 AstrBot 当前默认人格的 system_prompt（在 data_v4.db 里）。
 
@@ -355,7 +394,7 @@ def write_astrbot_persona(home):
         if PERSONA_MARK in old:
             # 已有指针 —— 但规则可能变了（如"每轮先搜"），故**替换**而非直接返回：
             # 指针永远挂在文末，从标记处截断再重写即可。
-            head = old[:old.index(PERSONA_MARK)].rstrip() + "\n\n"
+            head = _strip_legacy_guide(old[:old.index(PERSONA_MARK)]).rstrip() + "\n\n"
             head = re.sub(re.escape(PERSONA_MARK) + r"(\s*" + re.escape(PERSONA_MARK)
                           + r")+", PERSONA_MARK, head)
             bak = os.path.join(data, "persona_%s_原文备份_%s.json"
@@ -377,7 +416,7 @@ def write_astrbot_persona(home):
             {"rowid": rid, "persona_id": pid, "system_prompt": old},
             ensure_ascii=False, indent=1))
         cur.execute("UPDATE personas SET system_prompt=?, updated_at=? WHERE rowid=?",
-                    (old.rstrip() + "\n\n" + PERSONA_POINT + "\n",
+                    (_strip_legacy_guide(old).rstrip() + "\n\n" + PERSONA_POINT + "\n",
                      time.strftime("%Y-%m-%d %H:%M:%S"), rid))
         con.commit()
         con.close()

@@ -507,6 +507,11 @@ def tool_index():
         except Exception as e:
             out.append(u"（记录统计失败：%s）" % str(e)[:60])
     out += [u"## 记录（按来源，就地读，不复制）", u"",
+            # 第五十六轮：记录根清单已改为「活数据」（内置登记 + 手工登记的检索地址，"
+            # 每次扫描刷新、脱敏后写进名册），此处给一条指向，免得模型去背死表。
+            u"> 记录根清单（内置 + 用户手工登记的检索地址，每次扫描刷新、已脱敏）："
+            u"`agent_inventory.json` 的 `record_roots`；`mode`：direct 直接读 / "
+            u"digest 先摘录 / skip 只登记。", u"",
             u"| Agent | 来源 | 文件 | 最近 |", u"|---|---|---|---|"]
     for (name, src), r in rows:
         out.append(u"| %s | %s | %d | %s |" % (name, src, r["n"], r["new"] or u"—"))

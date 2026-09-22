@@ -1,7 +1,7 @@
-[project]
+﻿[project]
 name = "agent-asset-overview"
-version = "0.6.2"
-description = "把本机散落的 AI Agent 客户端 / Skill / MCP 服务 / 插件 / 工具，扫成一张可点的名册"
+version = "0.6.3"
+description = "鎶婃湰鏈烘暎钀界殑 AI Agent 瀹㈡埛绔?/ Skill / MCP 鏈嶅姟 / 鎻掍欢 / 宸ュ叿锛屾壂鎴愪竴寮犲彲鐐圭殑鍚嶅唽"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
@@ -12,5 +12,5 @@ dependencies = []
 dev = ["pyinstaller>=6.0"]
 
 [tool.uv]
-# 这是一个脚本式项目，不需要作为包安装进环境
+# 杩欐槸涓€涓剼鏈紡椤圭洰锛屼笉闇€瑕佷綔涓哄寘瀹夎杩涚幆澧?
 package = false

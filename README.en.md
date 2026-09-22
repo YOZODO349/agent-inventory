@@ -73,10 +73,28 @@ So this tool does three things:
 
 | Column | What it shows |
 |---|---|
-| **Agents** | Installed agent clients (built-in registry + shortcuts + a last-resort disk search + **marker-based auto-discovery**). Each card carries **three integration lights** (records / persona / MCP) and **the lights are clickable** — a dark light tells you what to fix. **Click the card for its workbench** |
+| **Agents** | Installed agent clients (built-in registry + shortcuts + a last-resort disk search + **marker-based auto-discovery**). Each card carries **three integration lights** (records / persona / MCP) and **the lights are clickable** — a dark light tells you what to fix. **Click the card for its workbench**; when a registry path is missing, it is recognised **by folder
+  name** in the common locations |
 | **Skills** | User-level and project-level skills (reads `SKILL.md` frontmatter); same-family skills collapse into one **bundle card** |
 | **MCP servers** | Registrations from WorkBuddy / Cursor / Claude Desktop / AstrBot / Codex. **Only portable ones** — entries tied to a client's private runtime directory are filtered out |
 | **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page — plus an **Edit my highlights** button whose hand-written list takes precedence |
+
+### Patch v0.6.3: wider recognition, a better workbench
+
+- **Recognition by name**: the `@HOME%\AppData\Local\Programs\…` paths in the registry are
+  **no longer a hard requirement** — a folder whose name matches (e.g. `Codex++`) anywhere in the
+  common locations (including `Program Files`, drive roots, Desktop/Documents/Downloads) is enough
+  to recognise it, and a main executable is picked from inside when there is one. The card's source
+  reads "found by name" so you can tell how it was recognised.
+- Fixed two crashes that **only happened on a brand-new machine's first scan** (two undefined
+  variables in the task-collection pass).
+- Workbench: the launch button is now **the single primary action** (solid, larger, pressed
+  feedback); every address line carries a **Copy** chip; **any address can be deleted** with a
+  right-click (a built-in one stops being registered *and* read, with one-click restore); a new
+  **Auto-scan** button re-enumerates the agent's locations and looks for candidate folders one
+  level under its own directory.
+- Two readings of the same directory (`.jsonl` digest + plain-text direct) are **merged into one
+  row**, each count reflecting what that reading actually reads.
 
 ## Records: **indexed in place, never copied** (the big change in this release)
 
@@ -156,13 +174,18 @@ Written automatically into: **AstrBot** (persona, stored in SQLite), **WorkBuddy
 
 Every agent card opens its own workbench; the toolbar has just four things:
 
-- **Launch &lt;Agent&gt;** (in the header): starts the agent itself;
+- **Launch &lt;Agent&gt;** (in the header): starts the agent itself — **the single primary action**
+  on this page (solid, larger, with pressed feedback);
 - **Open agent folder**: opens the agent's own install directory;
 - **Add search path manually**: unfolds a hint — a copyable prompt + "pick a folder…" (see above);
 - **Attach agent**: wires **that one agent** to MCP and drops the "search every turn" pointer,
   with a self-check prompt and a "copy the read guide (MCP-free)" button;
+- **Auto-scan**: re-enumerates its locations and looks for candidate folders one level under the
+  agent's own directory (register them with one click);
 - **Body**: the agent's **data locations**, one line each (built-in and manual treated **the same
-  way**); **click a path to open it**, right-click a manual one to remove it;
+  way**) — **click a path to open it**, click **Copy** to take that address,
+  **any row can be right-clicked away** (a built-in one stops being registered and read; a
+  "restore" link appears at the end); two readings of the same directory are merged into one row;
 - **Editable blurb**: stored in `agent_intros.json`, kept across re-scans.
 
 ## UI and interaction
