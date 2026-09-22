@@ -1,6 +1,6 @@
 ﻿[project]
 name = "agent-asset-overview"
-version = "0.6.4"
+version = "0.6.5"
 description = "鎶婃湰鏈烘暎钀界殑 AI Agent 瀹㈡埛绔?/ Skill / MCP 鏈嶅姟 / 鎻掍欢 / 宸ュ叿锛屾壂鎴愪竴寮犲彲鐐圭殑鍚嶅唽"
 readme = "README.md"
 requires-python = ">=3.9"

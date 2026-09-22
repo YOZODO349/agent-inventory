@@ -1374,6 +1374,41 @@ def _discover_roots():
 
 
 # 强特征：agent 客户端**专属**的形状，别的软件不会有
+# ---------- 未收录 Agent 的自动发现：名单与判据（第六十六轮补回） ----------
+# ⚠️ 2026-09-22：这三条常量在 v0.6.0 被误删过 —— 删函数的脚本把夹在中间的常量一起吞了，
+#    而调用点上包着 except，于是**自动发现静默失效**（界面照旧、功能死亡）。
+#    今从 v0.5.5 的 git 历史取回原文，并给调用点加了留痕日志。
+DISCOVER_SKIP = {
+    "baidu", "kingsoft", "billfish", "jetbrains", "mail", "tools", "wps",
+    "microsoft", "windows", "google", "nvidia", "intel", "adobe", "python",
+    "node_modules", "npm", "pip", "nuget", "temp", "packages", "git", "7-zip",
+    "programs", "program files", "program files (x86)", "mozilla", "steam",
+    "agent资产总览", "agent-asset-overview", "_public_export", "backups",
+}
+
+AGENT_NAME_HINTS = (
+    "agent", "agents", "codex", "claude", "cursor", "windsurf", "trae", "kiro",
+    "cline", "roo", "gemini", "qwen", "kimi", "tongyi", "doubao", "aider",
+    "continue", "copilot", "devin", "workbuddy", "astrbot", "openclaw", "grok",
+    "openai", "anthropic", "deepseek", "zhipu", "moonshot", "ollama", "lmstudio",
+)
+
+AGENT_MARKERS = {
+    "mcp.json": u"有 MCP 配置",
+    "mcp_server.json": u"有 MCP 注册表",
+    ".mcp.json": u"有 MCP 配置",
+    "skills": u"有技能目录",
+    "SKILL.md": u"有技能",
+    "AGENTS.md": u"有 AGENTS.md",
+    "CLAUDE.md": u"有 CLAUDE.md",
+    "GEMINI.md": u"有 GEMINI.md",
+    "memory": u"有记忆目录",
+    "memories": u"有记忆目录",
+    "plugins": u"有插件目录",
+    "extensions": u"有扩展目录",
+    "config.toml": u"有配置文件",
+}
+
 AGENT_STRONG = ("mcp.json", "mcp_server.json", ".mcp.json", "skills", "skill.md",
                 "agents.md", "claude.md", "gemini.md", "memories")
 # 弱特征：太常见（金山、Billfish 都有 plugins），只能当辅证
@@ -2221,7 +2256,14 @@ def collect():
             if not any((a.get("name") or "") == _d["name"] for a in agents):
                 agents.append(_d)
     except Exception as _e:
-        pass
+        # 第六十六轮（教训）：这外面原来只有 pass —— 常量被误删后**静默失效**，
+        #   界面看着正常，自动发现其实早就死了。今起失败一律留痕。
+        try:
+            with io.open(os.path.join(HERE, u"扫描异常.log"), "a", encoding="utf-8") as _f:
+                _f.write(u"%s ｜ 自动发现失败：%r\n"
+                         % (_t.strftime("%Y-%m-%d %H:%M:%S"), _e))
+        except Exception:
+            pass
 
     # 工作任务及产物一览：原料就是上面自动抄录下来的那堆日志
     tasks = collect_tasks(agents)
