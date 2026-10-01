@@ -79,6 +79,19 @@ So this tool does three things:
 | **MCP servers** | Registrations from WorkBuddy / Cursor / Claude Desktop / AstrBot / Codex. **Only portable ones** — entries tied to a client's private runtime directory are filtered out |
 | **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page — plus an **Edit my highlights** button whose hand-written list takes precedence |
 
+### Patch v0.6.6: a status bar you can actually see, plus "start on boot"
+
+- **The status bar at the bottom of the window had zero height all along** — it was packed
+  after the list area that claims all remaining space, so it never got a parcel (that is why
+  the "N items…" messages were never visible). It is packed **before** the list area now, so
+  both the messages and the new toggle on its right are visible.
+- New **Start on boot** checkbox (right end of the status bar): it writes an entry for the
+  **current user** (`HKCU\…\Run`, no admin needed, visible and removable in Task Manager).
+  If the app moves or you upgrade, the entry is re-pointed automatically; if the write fails
+  it rolls the checkbox back instead of pretending.
+- The homepage artwork no longer disappears silently: when the image cannot be found, the
+  status bar says so.
+
 ### Patch v0.6.3: wider recognition, a better workbench
 
 - **Recognition by name**: the `@HOME%\AppData\Local\Programs\…` paths in the registry are

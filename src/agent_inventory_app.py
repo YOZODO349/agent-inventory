@@ -300,7 +300,7 @@ PAGE_X = _px(28)
 
 # 首页右上角那张配图（本版要求）：等比例缩到与「页头 + 统计条」齐平，
 # 统计条相应向左收窄给它腾位。文件不在就当没有这张图，不影响启动。
-HOME_ART_DIR = os.path.join(os.path.expanduser("~"), "Desktop", u"配图")
+HOME_ART_DIR = os.path.join(os.path.expanduser("~"), "Desktop", u"龙图")   # 配图目录（2026-10-01 作者明示：此图不算隐私，发布照带）
 HOME_ART_STEM = "777"
 HOME_ART_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 HOME_ART_H = 196          # 逻辑像素：刚好等于「页头 + 统计条」那一块的高
@@ -1098,7 +1098,7 @@ class App(tk.Tk):
         # 第六十二轮（本版要求）：首页那张配图也挂一句悬停说明
         try:
             if getattr(self, "_home_art_lb", None) is not None:
-                self._tip(self._home_art_lb, u"", side="left")
+                self._tip(self._home_art_lb, u"傻龙似乎有了新的发现...", side="left")
         except Exception:
             pass
         self._poll_hist()            # 工作记录检索结果的取件循环
@@ -1344,6 +1344,13 @@ class App(tk.Tk):
                 path = _p
                 break
         if not path:
+            # 第六十七轮（教训）：配图找不到原来是**静默跳过** —— 路径被误改后谁也不知道
+            #   （2026-09-30 踩过：洗白脚本把本地路径也换成「配图」，图就没了）。
+            #   此处只记一笔，等状态栏建好再提示。
+            # 只在**这个目录确实存在、但里面没找到图**时才提示：
+            #   别人的电脑上没有「桌面/龙图」这种目录，本就不该报（2026-10-01 收细）
+            if HOME_ART_DIR and os.path.isdir(HOME_ART_DIR):
+                self._art_missing = HOME_ART_DIR
             return 0
         h = _px(HOME_ART_H)
         try:
@@ -1459,6 +1466,90 @@ class App(tk.Tk):
             return True
         except Exception:
             return False
+
+    # ---------- 开机自启（第六十六轮） ----------
+    # 写的是**本用户的** HKCU\...\Run 键：不需要管理员，任务管理器里可见可关。
+    AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    AUTOSTART_NAME = u"Agent资产总览"
+
+    def _autostart_cmd(self):
+        """开机要跑的命令：打包后就是这枚 exe；源码跑则是 pythonw + 脚本。"""
+        if getattr(sys, "frozen", False):
+            return u'"%s"' % sys.executable
+        py = sys.executable or "python"
+        pyw = os.path.join(os.path.dirname(py), "pythonw.exe")
+        if os.path.isfile(pyw):
+            py = pyw
+        return u'"%s" "%s"' % (py, os.path.join(HERE, "agent_inventory_app.py"))
+
+    def _autostart_state(self):
+        """off=没开；on=开着且指的就是当前程序；stale=开着但指向别处。"""
+        try:
+            import winreg
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.AUTOSTART_KEY)
+            try:
+                v, _t = winreg.QueryValueEx(k, self.AUTOSTART_NAME)
+            finally:
+                winreg.CloseKey(k)
+            cur = str(v or "").strip().strip('"').lower()
+            mine = self._autostart_cmd().strip().strip('"').lower()
+            return "on" if (cur == mine or mine.startswith(cur)) else "stale"
+        except FileNotFoundError:
+            return "off"
+        except Exception:
+            return "off"
+
+    def _autostart_on(self):
+        try:
+            import winreg
+            k = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, self.AUTOSTART_KEY,
+                                   0, winreg.KEY_SET_VALUE)
+            try:
+                winreg.SetValueEx(k, self.AUTOSTART_NAME, 0, winreg.REG_SZ,
+                                  self._autostart_cmd())
+            finally:
+                winreg.CloseKey(k)
+            return True
+        except Exception:
+            return False
+
+    def _autostart_off(self):
+        try:
+            import winreg
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.AUTOSTART_KEY, 0,
+                               winreg.KEY_SET_VALUE)
+            try:
+                winreg.DeleteValue(k, self.AUTOSTART_NAME)
+            except FileNotFoundError:
+                pass
+            finally:
+                winreg.CloseKey(k)
+            return True
+        except Exception:
+            return False
+
+    def _autostart_heal(self):
+        """开着但指老路径 → 改指当前程序（换过位置/版本时才动手）。"""
+        if self._autostart_state() == "stale" and self._autostart_on():
+            try:
+                self.status.configure(text=u"开机自启已改指当前程序：%s"
+                                           % os.path.basename(sys.executable or ""))
+            except Exception:
+                pass
+
+    def _toggle_autostart(self):
+        want = bool(self.var_autostart.get())
+        ok = self._autostart_on() if want else self._autostart_off()
+        if not ok:
+            try:
+                self.var_autostart.set(not want)      # 写不成就回滚，别骗人
+            except Exception:
+                pass
+            self.status.configure(text=u"改「开机自启」没成 —— 注册表写不动（权限？）")
+            return
+        self.status.configure(
+            text=(u"开机自启已打开 —— 下次登录 Windows 会自动启动本程序"
+                  if want else u"开机自启已关掉 —— 以后不再自动启动"))
 
     def _auto_onboard(self):
         """扫描结束后：**发现新 Agent 就自动给它接 MCP、放指针**（本版要求，写进应用里）。"""
@@ -3780,6 +3871,46 @@ class App(tk.Tk):
 
     # ---------- 列表 ----------
     def _build_list(self):
+        # 配图找不到就在状态栏说一声（别让它再默默消失）
+        try:
+            if getattr(self, "_art_missing", ""):
+                self.status.configure(
+                    text=u"首页配图没找到：%s（该目录里要有 %s.png 之类）"
+                         % (self._art_missing, HOME_ART_STEM))
+        except Exception:
+            pass
+
+        # 自愈：勾着、但记录里指的还是老路径（换过位置/版本）→ 悄悄改指当前程序
+        # ⚠️ 状态栏必须**先于列表区** pack：Tk 的 pack 按先后满足请求，底下那个
+        #    `outer`（列表区）带 expand=True、请求又大，先 pack 它就会把剩余空间吃光，
+        #    状态栏被压成 0 高（1×1）—— 连状态文字都看不见（老毛病，2026-09-30 修）。
+        try:
+            self._autostart_heal()
+        except Exception:
+            pass
+
+        # 状态栏：左=一句话状态，右=程序级开关（开机自启）
+        self.status_bar = ttk.Frame(self, padding=(PAGE_X, SP_2, PAGE_X, SP_3))
+        self.status_bar.pack(fill="x", side="bottom")
+        self.status = ttk.Label(self.status_bar, text="", style="Faint.TLabel",
+                                font=("Microsoft YaHei UI", 9))
+        self.status.pack(side="left", fill="x", expand=True)
+        try:
+            self.var_autostart = tk.BooleanVar(value=(self._autostart_state() != "off"))
+        except Exception:
+            self.var_autostart = tk.BooleanVar(value=False)
+        self.chk_autostart = tk.Checkbutton(
+            self.status_bar, text=u"开机自启", variable=self.var_autostart,
+            bg=BG, fg=DIM, activebackground=BG, activeforeground=FG,
+            selectcolor=CARD, font=("Microsoft YaHei UI", 9), bd=0,
+            highlightthickness=0, cursor="hand2",
+            command=self._toggle_autostart)
+        self.chk_autostart.pack(side="right")
+        self._tip(self.chk_autostart,
+                  u"勾上：登录 Windows 时自动打开本程序（写进本用户的启动项，"
+                  u"可在「任务管理器 → 启动」里看到，不收钱不留后门）")
+
+        # ---- 列表区（放在状态栏之后 pack：见上）----
         outer = ttk.Frame(self, padding=(PAGE_X, 0, PAGE_X, 0))
         outer.pack(fill="both", expand=True)
 
@@ -3798,10 +3929,6 @@ class App(tk.Tk):
         self.canvas.bind_all("<MouseWheel>", self._on_wheel)
         self.canvas.bind_all("<Shift-MouseWheel>", self._on_shift_wheel)
 
-        self.status = ttk.Label(self, text="", style="Faint.TLabel",
-                                font=("Microsoft YaHei UI", 9),
-                                padding=(PAGE_X, SP_2, PAGE_X, SP_3))
-        self.status.pack(fill="x")
 
     def _on_canvas_resize(self, e):
         self.canvas.itemconfigure(self.win, width=e.width)
