@@ -301,7 +301,8 @@ PAGE_X = _px(28)
 # 首页右上角那张配图（本版要求）：等比例缩到与「页头 + 统计条」齐平，
 # 统计条相应向左收窄给它腾位。文件不在就当没有这张图，不影响启动。
 HOME_ART_DIR = os.path.join(os.path.expanduser("~"), "Desktop", u"龙图")   # 配图目录（2026-10-01 作者明示：此图不算隐私，发布照带）
-HOME_ART_STEM = "777"
+HOME_ART_STEM = "777"        # 鼠标**移上去**时显示的那张（原本这张）
+HOME_ART_STEM_IDLE = "890890"  # **常态**显示的那张（2026-10-03 作者要求：默认这张）
 HOME_ART_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 HOME_ART_H = 196          # 逻辑像素：刚好等于「页头 + 统计条」那一块的高
 HOME_ART_BLEED = True     # True=右边缘贴窗口右缘；False=与内容列右缘对齐
@@ -1099,6 +1100,7 @@ class App(tk.Tk):
         try:
             if getattr(self, "_home_art_lb", None) is not None:
                 self._tip(self._home_art_lb, u"傻龙似乎有了新的发现...", side="left")
+                self._bind_art_swap()      # 换图绑定要在 _tip 之后
         except Exception:
             pass
         self._poll_hist()            # 工作记录检索结果的取件循环
@@ -1337,12 +1339,16 @@ class App(tk.Tk):
         本版要求：图放右上角、右边缘贴窗口右缘；统计条向左缩小腾位。
         图缺失 / 没装 PIL 都**静默跳过**（返回 0）—— 装饰不该成为启动的前提。
         """
-        path = ""
-        for _e in HOME_ART_EXTS:
-            _p = os.path.join(HOME_ART_DIR, HOME_ART_STEM + _e)
-            if os.path.isfile(_p):
-                path = _p
-                break
+        def _find(stem):
+            for _e in HOME_ART_EXTS:
+                _p = os.path.join(HOME_ART_DIR, stem + _e)
+                if os.path.isfile(_p):
+                    return _p
+            return ""
+
+        path_hover = _find(HOME_ART_STEM)            # 悬停那张（777）
+        path_idle = _find(HOME_ART_STEM_IDLE) or path_hover   # 常态那张（890890，缺了退回悬停那张）
+        path = path_idle
         if not path:
             # 第六十七轮（教训）：配图找不到原来是**静默跳过** —— 路径被误改后谁也不知道
             #   （2026-09-30 踩过：洗白脚本把本地路径也换成「配图」，图就没了）。
@@ -1356,11 +1362,23 @@ class App(tk.Tk):
         try:
             from PIL import Image, ImageTk
             src_img = Image.open(path).convert("RGBA")
-            # 先在原图上看：**最底下那条全宽黑条有多厚** —— 那条就是「桌沿」，
-            # 新画的粗黑线要跟它接上，故位置与厚度都从图上量，而不是写死。
-            _pxl = src_img.load()
-            _w0, _h0 = src_img.size
+            # 那条横贯粗黑线接的是**悬停图（777）的「桌沿」** —— 常态图（890890）
+            #   没有桌沿（2026-10-03 实测：底部全宽黑条 0 px），所以黑条一律从
+            #   悬停图上量，不能再用"当前这张"。
             _band = 0
+            img_idle = ImageTk.PhotoImage(src_img.resize(
+                (max(1, int(round(src_img.width * h / float(max(1, src_img.height))))), h),
+                Image.LANCZOS))
+            if path_hover and os.path.isfile(path_hover):
+                hv = Image.open(path_hover).convert("RGBA")
+            else:
+                hv = src_img
+            img_hover = ImageTk.PhotoImage(hv.resize(
+                (max(1, int(round(hv.width * h / float(max(1, hv.height))))), h),
+                Image.LANCZOS))
+            # 从**悬停图**上量「桌沿」：最底下那条全宽黑条有多厚（写死位置会歪）
+            _pxl = hv.load()
+            _w0, _h0 = hv.size
             for _yy in range(_h0 - 1, max(0, _h0 - _h0 // 4), -1):
                 _sample = [_pxl[_xx, _yy] for _xx in range(0, _w0, max(1, _w0 // 40))]
                 if all((c[3] > 180 and c[0] < 80 and c[1] < 80 and c[2] < 80)
@@ -1368,15 +1386,15 @@ class App(tk.Tk):
                     _band += 1
                 else:
                     break
-            im = src_img
-            w = max(1, int(round(im.width * h / float(max(1, im.height)))))
-            im = im.resize((w, h), Image.LANCZOS)
-            img = ImageTk.PhotoImage(im)
+            # 两张取同一框宽（标签的 width/height 按**像素**给），换图时版面不跳
+            w = max(img_idle.width(), img_hover.width())
         except Exception:
             return 0
-        lb = tk.Label(self, bg=BG, image=img, bd=0)
-        lb.image = img                      # 留住引用，别被回收
-        self._home_art_img = img
+        lb = tk.Label(self, bg=BG, image=img_idle, bd=0, width=w, height=h)
+        lb.image = img_idle                 # 留住引用，别被回收
+        self._home_art_img = img_idle
+        self._art_idle_img = img_idle
+        self._art_hover_img = img_hover
         self._home_art_lb = lb
         lb.place(relx=1.0, x=(0 if HOME_ART_BLEED else -PAGE_X), y=0, anchor="ne")
         self._home_art_w = w
@@ -1385,10 +1403,38 @@ class App(tk.Tk):
         if HOME_RULE and _band:
             _rh = max(3, int(round(_band * h / float(max(1, _h0)))))
             rule = tk.Frame(self, bg="#000000", bd=0, highlightthickness=0)
-            rule.place(x=0, y=(h - _rh), relwidth=1.0,
-                       width=-(w - 2), height=_rh)
+            # 第六十九轮（作者要求）：**一路铺到窗口右缘、压在图上**（原先到图片左缘
+            #   就收住，宽度写的是 -（图宽-2））。堆叠次序在 __init__ 里已把本线
+            #   lift 到配图之上，故它会盖住图片底部那一条。
+            rule.place(x=0, y=(h - _rh), relwidth=1.0, height=_rh)
             self._home_rule = rule
         return w
+
+    def _bind_art_swap(self):
+        """鼠标进/出首页配图 → 换图。
+
+        第六十八轮（作者要求）：**常态**显示 `890890`，鼠标移上去换成原来那张 `777`。
+        ⚠️ 必须在本图那份 `_tip(...)` **之后**绑定：`_tip` 用的是不带 `add` 的 bind，
+        先绑会被它覆盖掉。
+        """
+        lb = getattr(self, "_home_art_lb", None)
+        idle = getattr(self, "_art_idle_img", None)
+        hover = getattr(self, "_art_hover_img", None)
+        if lb is None or idle is None or hover is None:
+            return
+
+        def _to(img):
+            try:
+                lb.configure(image=img)
+                lb.image = img          # Tk 不持引用，必须自己留一份
+            except Exception:
+                pass
+
+        try:
+            lb.bind("<Enter>", lambda _e: _to(hover), add="+")
+            lb.bind("<Leave>", lambda _e: _to(idle), add="+")
+        except Exception:
+            pass
 
     # ---------- 指标条 ----------
     def _build_metrics(self, parent):

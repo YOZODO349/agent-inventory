@@ -79,6 +79,15 @@ So this tool does three things:
 | **MCP servers** | Registrations from WorkBuddy / Cursor / Claude Desktop / AstrBot / Codex. **Only portable ones** — entries tied to a client's private runtime directory are filtered out |
 | **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page — plus an **Edit my highlights** button whose hand-written list takes precedence |
 
+### Patch v0.6.7: the homepage artwork swaps on hover, and the rule runs edge to edge
+
+- The homepage artwork is now **two images**: `HOME_ART_STEM_IDLE` (e.g. `890890`) shows by
+  default, and **hovering swaps in** `HOME_ART_STEM` (e.g. `777`); leaving swaps back. Both are
+  scaled to the same height and pinned into the same frame, so the layout never jumps.
+- The bold full-width rule now **runs all the way to the window's right edge and sits on top of
+  the artwork** (before, it stopped at the image's left edge). Its height and position are still
+  **measured** from the bottom black band of the hover image.
+
 ### Patch v0.6.6: a status bar you can actually see, plus "start on boot"
 
 - **The status bar at the bottom of the window had zero height all along** — it was packed
@@ -204,9 +213,10 @@ Every agent card opens its own workbench; the toolbar has just four things:
 ## UI and interaction
 
 - **Hover help** on buttons (attached per widget class, so **buttons added later get one automatically**; the side can be chosen);
-- **Optional homepage artwork**: the `HOME_ART_*` constants point at a local image, scaled to the
-  "header + stats bar" block in the top-right corner, with an optional full-width rule under it
-  (**off by default**);
+- **Optional homepage artwork**: the `HOME_ART_*` constants point at local images, scaled to the
+  "header + stats bar" block in the top-right corner — `HOME_ART_STEM_IDLE` is the default one and
+  `HOME_ART_STEM` is **swapped in on hover** — with a full-width rule that **sits on top of the
+  artwork**, measured from the hover image's bottom black band (**off by default**);
 - **Shortcuts**: `Ctrl+F` search ｜ `F5` / `Ctrl+L` rescan ｜ `Ctrl+1..4` switch column ｜
   `Ctrl+P` project settings ｜ `Esc` clear search;
 - Empty columns hide themselves, tab included; anything not found is simply not shown;
