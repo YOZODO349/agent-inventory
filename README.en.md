@@ -79,6 +79,16 @@ So this tool does three things:
 | **MCP servers** | Registrations from WorkBuddy / Cursor / Claude Desktop / AstrBot / Codex. **Only portable ones** — entries tied to a client's private runtime directory are filtered out |
 | **Main projects** | The projects you care about: **implemented features, dev log, full artifact paths** on one page — plus an **Edit my highlights** button whose hand-written list takes precedence |
 
+### Patch v0.6.8: the MCP status is computed for real, and can be re-checked
+
+- **The "MCP status" window now recomputes on open** (it used to show the value from the last
+  scan, so marking the server as trusted inside the client made no difference), and writes the
+  result back into the roster — the MCP light on the card follows.
+- A new **Re-check** button recomputes that client's MCP status on the spot.
+- **WorkBuddy's "trusted" flag is no longer hard-coded to `False`** — it is read from its trust
+  list `~/.workbuddy/mcp-approvals.json` (entries look like `"<hash>::<server>": <timestamp>`):
+  if a server name that points at this app is listed, the status reads "registered (and trusted)".
+
 ### Patch v0.6.7: the homepage artwork swaps on hover, and the rule runs edge to edge
 
 - The homepage artwork is now **two images**: `HOME_ART_STEM_IDLE` (e.g. `890890`) shows by

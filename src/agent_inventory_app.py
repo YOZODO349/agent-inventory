@@ -1760,8 +1760,27 @@ class App(tk.Tk):
         pad.pack(fill="both", expand=True)
         ttk.Label(pad, text="MCP 状态 · %s" % name, style="TLabel",
                   font=("Microsoft YaHei UI", 13, "bold")).pack(anchor="w")
-        it = (agent or {}).get("integration") or {}
-        st_txt = ("已注册" + ("（且受信）" if it.get("mcp_trusted", True) else "（**未受信**）"))
+        # 第六十九轮（作者令）：**打开就算一次新鲜的**，别拿上次扫描的缓存糊弄人；
+        #   并把结果回写进名册里的这条，卡片上那盏 MCP 灯随之刷新。
+        def _fresh_status():
+            try:
+                _mod = self._scanner_mod()
+                if _mod:
+                    _it = _mod.integration_of(
+                        agent, None,
+                        (agent.get("integration") or {}).get("records") or 0)
+                    agent["integration"] = _it
+                    return _it
+            except Exception:
+                pass
+            return dict((agent or {}).get("integration") or {})
+
+        it = _fresh_status()
+        try:
+            self.refresh()
+        except Exception:
+            pass
+        st_txt = ("已注册" + ("（且受信）" if it.get("mcp_trusted", True) else "（未受信）"))
         if not it.get("mcp"):
             st_txt = "未注册"
         ttk.Label(pad, text="现状：%s" % st_txt, style="Dim.TLabel",
@@ -1812,7 +1831,9 @@ class App(tk.Tk):
         for nt in (it.get("notes") or []):
             lines.append(u"· " + str(nt))
         if key == "workbuddy":
-            lines += [u"", u"WorkBuddy 的 MCP 有**哈希信任清单**（见它日志里的 "
+            lines += [u"", u"（已在它界面里受信的话，上面「现状」会写「且受信」；"
+                           u"没更新就按左下角「重新检测」。）", u"",
+                      u"WorkBuddy 的 MCP 有**哈希信任清单**（见它日志里的 "
                           u"[MCP Security] skipping untrusted server）——",
                       u"注册了也会被跳过。要它真正用起来，得在它的**连接器 / MCP 设置**里"
                       u"把这个服务受信/启用。",
@@ -1828,7 +1849,11 @@ class App(tk.Tk):
                 self.status.configure(text=u"这家没有已知的配置位置。")
         ttk.Button(foot, text=u"打开配置所在目录", style="Tab.TButton",
                    command=open_dir).pack(side="left")
-        ttk.Button(foot, text=u"复制登记片段", style="Act.TButton",
+        # 手动刷新（作者令）：重开本窗即重新检测一遍
+        ttk.Button(foot, text=u"重新检测", style="Act.TButton",
+                   command=lambda: (dlg.destroy(), self.mcp_status_dialog(agent))
+                   ).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text=u"复制登记片段", style="Tab.TButton",
                    command=lambda: (self.clipboard_clear(),
                                     self.clipboard_append(snippet_body),
                                     self.status.configure(

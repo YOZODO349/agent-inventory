@@ -1584,6 +1584,58 @@ def _mcp_registered(agent):
     return True, fp
 
 
+def _our_server_names(agent):
+    """这家客户端的 MCP 配置里，指向**本应用**的那些服务叫什么名字。
+
+    用于去它的信任清单里对号（第六十九轮：WorkBuddy 的信任是"按名字+哈希"记的）。
+    """
+    key = agent_key_of(agent)
+    paths = {"workbuddy": os.path.join(HOME, ".workbuddy", "mcp.json"),
+             "cursor": os.path.join(HOME, ".cursor", "mcp.json"),
+             "astrbot": os.path.join(HOME, ".astrbot", "data", "mcp_server.json")}
+    fp = paths.get(key)
+    if not fp or not os.path.isfile(fp):
+        return set()
+    try:
+        d = json.load(io.open(fp, encoding="utf-8", errors="ignore"))
+    except Exception:
+        return set()
+    out = set()
+    for nm, cfg in ((d or {}).get("mcpServers") or {}).items():
+        blob = json.dumps(cfg, ensure_ascii=False).lower()
+        if any(x in blob for x in ("agent资产总览", "agent-asset-overview",
+                                   "agent_mcp.py", "agentassetoverview")) \
+                or (MCP_SERVER_KEY and MCP_SERVER_KEY.lower() in str(nm).lower()):
+            out.add(nm)
+    return out
+
+
+def _workbuddy_mcp_trusted(names=None):
+    """WorkBuddy 的 MCP **信任清单**：`~/.workbuddy/mcp-approvals.json`。
+
+    形如 `{"<哈希>::<服务器名>": <时间戳>}` —— 里面出现我们的服务器名，
+    就说明用户已经在它界面里点过信任（2026-10-03 作者实测：点过才真连上）。
+    """
+    fp = os.path.join(HOME, ".workbuddy", "mcp-approvals.json")
+    try:
+        d = json.load(io.open(fp, encoding="utf-8", errors="ignore"))
+    except Exception:
+        return False
+    if not isinstance(d, dict):
+        return False
+    want = set()
+    for n in list(names or []) + [MCP_SERVER_KEY]:
+        if n:
+            want.add(str(n).strip().lower())
+    for k in d:
+        t = str(k)
+        if "::" in t:
+            t = t.rsplit("::", 1)[-1]
+        if t.strip().lower() in want:
+            return True
+    return False
+
+
 def integration_of(agent, extra_roots=None, record_count=0):
     """算一个 Agent 的接入程度（四盏灯 + 备注）。"""
     key = agent_key_of(agent)
@@ -1613,9 +1665,14 @@ def integration_of(agent, extra_roots=None, record_count=0):
     if out["mcp"]:
         out["mcp_file"] = mcp_fp
         if key == "workbuddy":
-            # 实测：WorkBuddy 有哈希信任清单，注册了也会被 skip（见其 MCP Security 日志）
-            out["mcp_trusted"] = False
-            out["notes"].append(u"MCP 已注册，但客户端有信任门槛（需在它界面里受信）")
+            # 第六十九轮（作者问「我搞定了它为什么不亮」）：这里**原来写死 False** ——
+            #   于是在它界面里受信之后，灯也永远是「未受信」◐（2026-10-03 修）。
+            #   今真去读它的信任清单 `~/.workbuddy/mcp-approvals.json`。
+            out["mcp_trusted"] = _workbuddy_mcp_trusted(_our_server_names(agent))
+            if out["mcp_trusted"]:
+                out["notes"].append(u"MCP 已注册，且客户端已受信（信任清单里有它）")
+            else:
+                out["notes"].append(u"MCP 已注册，但客户端有信任门槛（需在它界面里受信）")
         else:
             out["mcp_trusted"] = True
     else:
